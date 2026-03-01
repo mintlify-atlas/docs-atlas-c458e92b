@@ -1,0 +1,719 @@
+---
+title: Hooks
+description: Master Feathers hooks system for middleware, validation, authorization, and composable service logic
+---
+
+Hooks are middleware functions that run before, after, or on errors of service method calls. They provide a powerful way to add cross-cutting concerns like validation, authorization, logging, and data manipulation.
+
+## Hook Types
+
+Feathers supports four types of hooks:
+
+```typescript declarations.ts:359
+type HookType = 'before' | 'after' | 'error' | 'around'
+```
+
+<Tabs>
+  <Tab title="Before">
+**Before hooks** run before the service method:
+
+```typescript
+service.hooks({
+  before: {
+    create: [
+      async (context) => {
+        // Validate data
+        if (!context.data.email) {
+          throw new BadRequest('Email is required')
+        }
+        
+        // Modify data
+        context.data.createdAt = new Date()
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+Use cases:
+
+- Input validation
+- Authentication checks
+- Data transformation
+- Setting default values
+
+</Tab>
+  <Tab title="After">
+**After hooks** run after successful service method calls:
+
+```typescript
+service.hooks({
+  after: {
+    find: [
+      async (context) => {
+        // Modify result
+        context.result.data = context.result.data.map(item => ({
+          ...item,
+          fullName: `${item.firstName} ${item.lastName}`
+        }))
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+Use cases:
+
+- Data transformation
+- Adding computed fields
+- Filtering sensitive data
+- Logging successful operations
+
+</Tab>
+  <Tab title="Error">
+**Error hooks** run when a service method throws an error:
+
+```typescript
+service.hooks({
+  error: {
+    all: [
+      async (context) => {
+        console.error('Error in', context.path, context.method)
+        console.error(context.error)
+        
+        // Transform error
+        if (context.error.code === 'ECONNREFUSED') {
+          context.error = new Unavailable('Database unavailable')
+        }
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+Use cases:
+
+- Error logging
+- Error transformation
+- Sending notifications
+- Cleanup operations
+
+</Tab>
+  <Tab title="Around">
+**Around hooks** wrap the method execution and have full control:
+
+```typescript
+service.hooks({
+  around: {
+    all: [
+      async (context, next) => {
+        const start = Date.now()
+        
+        try {
+          await next() // Call next hooks and method
+          
+          const duration = Date.now() - start
+          console.log(`${context.method} took ${duration}ms`)
+        } catch (error) {
+          console.error('Error:', error)
+          throw error
+        }
+      }
+    ]
+  }
+})
+```
+
+Use cases:
+
+- Performance monitoring
+- Transaction management
+- Caching
+- Custom error handling
+
+</Tab>
+</Tabs>
+
+## Hook Context
+
+Every hook receives a context object with information about the service call:
+
+```typescript declarations.ts:363-444
+interface HookContext {
+  app: Application           // The Feathers application
+  service: Service          // The service being called
+  path: string              // Service path (e.g., 'users')
+  method: string            // Method name (e.g., 'create')
+  type: HookType            // 'before', 'after', 'error', 'around'
+  params: Params            // Service method parameters
+  id?: Id                   // The record ID (for get, update, patch, remove)
+  data?: any                // Data being created/updated (for create, update, patch)
+  result?: any              // Method result (available in 'after' hooks)
+  error?: Error             // Error object (available in 'error' hooks)
+  event: string | null      // Event name to emit
+  dispatch?: any            // Data to send to client (alternative to result)
+  http?: Http               // HTTP-specific properties
+}
+```
+
+<CodeGroup>
+```typescript Reading Context
+service.hooks({
+  before: {
+    get: [
+      async (context) => {
+        console.log('App:', context.app)
+        console.log('Service:', context.path)
+        console.log('Method:', context.method)
+        console.log('ID:', context.id)
+        console.log('Params:', context.params)
+        console.log('User:', context.params.user)
+      }
+    ]
+  }
+})
+```
+
+```typescript Modifying Context
+service.hooks({
+  before: {
+    create: [
+      async (context) => {
+        // Modify data
+        context.data.createdAt = new Date()
+        context.data.userId = context.params.user.id
+        
+        // Add to params
+        context.params.timestamp = Date.now()
+        
+        return context
+      }
+    ]
+  },
+  after: {
+    all: [
+      async (context) => {
+        // Modify result
+        if (context.result) {
+          delete context.result.password
+        }
+        
+        return context
+      }
+    ]
+  }
+})
+```
+</CodeGroup>
+
+## Registering Hooks
+
+### Service Hooks
+
+Register hooks for specific service methods:
+
+```typescript hooks.ts:214-234
+service.hooks({
+  before: {
+    all: [hook1, hook2],           // Run for all methods
+    find: [hook3],                  // Run only for find
+    get: [hook4],
+    create: [hook5, hook6],
+    update: [hook7],
+    patch: [hook8],
+    remove: [hook9]
+  },
+  after: {
+    all: [afterHook1],
+    create: [afterHook2]
+  },
+  error: {
+    all: [errorHook1]
+  },
+  around: {
+    all: [aroundHook1]
+  }
+})
+```
+
+### Application Hooks
+
+Register hooks that run for all services:
+
+```typescript application.ts:206-223
+app.hooks({
+  before: {
+    all: [
+      async (context) => {
+        console.log(`Calling ${context.path}.${context.method}`)
+      }
+    ]
+  },
+  after: {
+    all: [
+      async (context) => {
+        console.log('Success!')
+      }
+    ]
+  },
+  error: {
+    all: [
+      async (context) => {
+        console.error('Error:', context.error.message)
+      }
+    ]
+  }
+})
+```
+
+### Multiple Registration Formats
+
+<Tabs>
+  <Tab title="Standard Format">
+```typescript
+service.hooks({
+  before: {
+    all: [hook1, hook2],
+    create: [hook3]
+  },
+  after: {
+    all: [hook4]
+  }
+})
+```
+  </Tab>
+  <Tab title="Around Only">
+```typescript
+service.hooks({
+  around: {
+    all: [aroundHook1, aroundHook2]
+  }
+})
+```
+  </Tab>
+  <Tab title="Method-Specific">
+```typescript
+service.hooks({
+  find: [middleware1, middleware2],
+  create: [middleware3]
+})
+```
+  </Tab>
+  <Tab title="Chainable">
+```typescript
+service
+  .hooks({
+    before: { all: [hook1] }
+  })
+  .hooks({
+    after: { all: [hook2] }
+  })
+```
+  </Tab>
+</Tabs>
+
+## Hook Execution Order
+
+Hooks execute in a specific order:
+
+```typescript hooks.ts:159-164
+1. Application around hooks (all)
+2. Application around hooks (method-specific)
+3. Application before hooks (all)
+4. Application before hooks (method-specific)
+5. Service around hooks (all)
+6. Service around hooks (method-specific)
+7. Service before hooks (all)
+8. Service before hooks (method-specific)
+9. Service method executes
+10. Service after hooks (method-specific)
+11. Service after hooks (all)
+12. Application after hooks (method-specific)
+13. Application after hooks (all)
+```
+
+<Note>
+If an error occurs at any point, the execution switches to error hooks in reverse order.
+</Note>
+
+## Common Hook Patterns
+
+### Authentication
+
+```typescript
+const authenticate = async (context) => {
+  const { params } = context
+  
+  if (!params.provider) {
+    // Internal call, skip authentication
+    return context
+  }
+  
+  const token = params.headers?.authorization?.replace('Bearer ', '')
+  
+  if (!token) {
+    throw new NotAuthenticated('No token provided')
+  }
+  
+  try {
+    const decoded = verifyToken(token)
+    context.params.user = decoded
+    return context
+  } catch (error) {
+    throw new NotAuthenticated('Invalid token')
+  }
+}
+
+service.hooks({
+  before: {
+    all: [authenticate]
+  }
+})
+```
+
+### Authorization
+
+```typescript
+const authorize = (...allowedRoles) => {
+  return async (context) => {
+    const { user } = context.params
+    
+    if (!user) {
+      throw new NotAuthenticated('Not authenticated')
+    }
+    
+    if (!allowedRoles.includes(user.role)) {
+      throw new Forbidden(`Role '${user.role}' not allowed`)
+    }
+    
+    return context
+  }
+}
+
+service.hooks({
+  before: {
+    create: [authorize('admin', 'editor')],
+    remove: [authorize('admin')]
+  }
+})
+```
+
+### Validation
+
+```typescript
+const validate = (schema) => {
+  return async (context) => {
+    try {
+      context.data = await schema.validate(context.data, {
+        stripUnknown: true
+      })
+      return context
+    } catch (error) {
+      throw new BadRequest('Validation failed', {
+        errors: error.errors
+      })
+    }
+  }
+}
+
+const userSchema = {
+  async validate(data, options) {
+    if (!data.email) throw new Error('Email required')
+    if (!data.password) throw new Error('Password required')
+    return data
+  }
+}
+
+service.hooks({
+  before: {
+    create: [validate(userSchema)]
+  }
+})
+```
+
+### Remove Fields
+
+```typescript
+const removeFields = (...fields) => {
+  return async (context) => {
+    if (context.result) {
+      if (Array.isArray(context.result)) {
+        context.result = context.result.map(item => {
+          const copy = { ...item }
+          fields.forEach(field => delete copy[field])
+          return copy
+        })
+      } else if (context.result.data) {
+        // Paginated results
+        context.result.data = context.result.data.map(item => {
+          const copy = { ...item }
+          fields.forEach(field => delete copy[field])
+          return copy
+        })
+      } else {
+        fields.forEach(field => delete context.result[field])
+      }
+    }
+    return context
+  }
+}
+
+service.hooks({
+  after: {
+    all: [removeFields('password', 'ssn', 'creditCard')]
+  }
+})
+```
+
+### Populate Associations
+
+```typescript
+const populate = (field, service) => {
+  return async (context) => {
+    const { app, result } = context
+    
+    if (!result) return context
+    
+    const items = Array.isArray(result) ? result : 
+                  result.data ? result.data : [result]
+    
+    await Promise.all(
+      items.map(async (item) => {
+        if (item[`${field}Id`]) {
+          item[field] = await app.service(service).get(item[`${field}Id`])
+        }
+      })
+    )
+    
+    return context
+  }
+}
+
+service.hooks({
+  after: {
+    find: [populate('author', 'users')],
+    get: [populate('author', 'users')]
+  }
+})
+```
+
+### Soft Delete
+
+```typescript
+const softDelete = async (context) => {
+  // Change remove to patch
+  context.data = {
+    deletedAt: new Date(),
+    deleted: true
+  }
+  
+  const result = await context.service.patch(context.id, context.data, context.params)
+  context.result = result
+  
+  // Skip actual remove by setting result
+  return context
+}
+
+const excludeDeleted = async (context) => {
+  // Add deleted filter to query
+  context.params.query = {
+    ...context.params.query,
+    deleted: { $ne: true }
+  }
+  return context
+}
+
+service.hooks({
+  before: {
+    find: [excludeDeleted],
+    get: [excludeDeleted],
+    remove: [softDelete]
+  }
+})
+```
+
+### Caching
+
+```typescript
+const cache = new Map()
+
+const cacheResult = async (context, next) => {
+  const { id, method, path } = context
+  
+  if (method !== 'get') {
+    return next()
+  }
+  
+  const cacheKey = `${path}:${id}`
+  
+  if (cache.has(cacheKey)) {
+    console.log('Cache hit:', cacheKey)
+    context.result = cache.get(cacheKey)
+    return context
+  }
+  
+  await next()
+  
+  if (context.result) {
+    cache.set(cacheKey, context.result)
+  }
+  
+  return context
+}
+
+const invalidateCache = async (context) => {
+  const { id, method, path } = context
+  const cacheKey = `${path}:${id}`
+  
+  if (['create', 'update', 'patch', 'remove'].includes(method)) {
+    cache.delete(cacheKey)
+  }
+  
+  return context
+}
+
+service.hooks({
+  around: {
+    get: [cacheResult]
+  },
+  after: {
+    create: [invalidateCache],
+    update: [invalidateCache],
+    patch: [invalidateCache],
+    remove: [invalidateCache]
+  }
+})
+```
+
+## Skipping Service Methods
+
+Set `context.result` in a before hook to skip the actual service method:
+
+```typescript
+service.hooks({
+  before: {
+    get: [
+      async (context) => {
+        // Check cache
+        const cached = await cache.get(context.id)
+        
+        if (cached) {
+          // Skip service method by setting result
+          context.result = cached
+        }
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+## Error Handling in Hooks
+
+### Throwing Errors
+
+```typescript
+service.hooks({
+  before: {
+    create: [
+      async (context) => {
+        if (!context.data.email) {
+          throw new BadRequest('Email is required')
+        }
+      }
+    ]
+  }
+})
+```
+
+### Handling Errors
+
+```typescript hooks.ts:39-50
+service.hooks({
+  error: {
+    all: [
+      async (context) => {
+        // Log error
+        console.error(`Error in ${context.path}.${context.method}:`, context.error)
+        
+        // Transform error
+        if (context.error.code === 'ECONNREFUSED') {
+          context.error = new Unavailable('Service unavailable')
+        }
+        
+        // Or recover from error
+        if (context.method === 'get' && context.error.code === 404) {
+          context.result = null // Return null instead of throwing
+          delete context.error  // Clear error
+        }
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+## TypeScript Support
+
+```typescript
+import { HookContext, NextFunction } from '@feathersjs/feathers'
+
+interface User {
+  id: number
+  email: string
+  role: string
+}
+
+const authenticate = async (context: HookContext): Promise<HookContext> => {
+  // Hook implementation
+  return context
+}
+
+const authorize = (...roles: string[]) => {
+  return async (context: HookContext<Application, UserService>): Promise<HookContext> => {
+    const user = context.params.user as User
+    
+    if (!roles.includes(user.role)) {
+      throw new Forbidden('Access denied')
+    }
+    
+    return context
+  }
+}
+
+const timing = async (context: HookContext, next: NextFunction): Promise<void> => {
+  const start = Date.now()
+  await next()
+  console.log(`Duration: ${Date.now() - start}ms`)
+}
+```
+
+## Best Practices
+
+1. **Keep hooks focused** - Each hook should do one thing well
+2. **Make hooks reusable** - Use factory functions for configurable hooks
+3. **Order matters** - Place authentication/authorization first
+4. **Return context** - Always return the context object (except around hooks)
+5. **Use async/await** - Avoid promise chains
+6. **Handle errors properly** - Use error hooks for cleanup
+7. **Avoid side effects** - Be careful with mutations
+8. **Test hooks independently** - Unit test hooks separately from services
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Events" icon="broadcast-tower" href="/concepts/events">
+    Learn about real-time events
+  </Card>
+  <Card title="Errors" icon="triangle-exclamation" href="/concepts/errors">
+    Master error handling in Feathers
+  </Card>
+</CardGroup>

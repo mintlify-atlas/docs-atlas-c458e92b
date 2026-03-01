@@ -1,0 +1,363 @@
+---
+title: Resolvers API
+description: API reference for @feathersjs/schema resolvers and property resolution
+---
+
+Resolvers transform and compute data properties for Feathers services, enabling virtual properties, data sanitization, and context-aware transformations.
+
+## resolve
+
+Creates a resolver instance that resolves properties based on property resolver functions.
+
+```typescript
+import { resolve, virtual } from '@feathersjs/schema'
+
+const userResolver = resolve<User, HookContext>({
+  password: async () => undefined,
+  name: virtual(async (user) => `${user.firstName} ${user.lastName}`)
+})
+```
+
+### Signatures
+
+```typescript
+function resolve<T, C>(
+  properties: PropertyResolverMap<T, C>,
+  options?: ResolverOptions<T, C>
+): Resolver<T, C>
+
+function resolve<T, C>(options: ResolverConfig<T, C>): Resolver<T, C>
+```
+
+### Parameters
+
+<ParamField path="properties" type="PropertyResolverMap<T, C>" required>
+  Object mapping property names to resolver functions
+</ParamField>
+
+<ParamField path="options" type="ResolverOptions<T, C>">
+  Optional configuration object
+</ParamField>
+
+**ResolverOptions:**
+
+<ParamField path="schema" type="Schema<T>">
+  Schema for validation. Can be used with `validate` option
+</ParamField>
+
+<ParamField path="converter" type="ResolverConverter<T, C>">
+  Function to transform data before property resolution
+</ParamField>
+
+<ParamField path="validate" type="'before' | 'after' | false">
+  **Deprecated.** When to validate: before or after resolution. Use `validateData` hook instead
+</ParamField>
+
+### Returns
+
+Returns a `Resolver<T, C>` instance.
+
+## Resolver
+
+The resolver class that handles property resolution.
+
+### resolve
+
+Resolves all properties for the given data:
+
+```typescript
+const resolved = await userResolver.resolve(data, context)
+```
+
+<ParamField path="data" type="D" required>
+  Data object to resolve
+</ParamField>
+
+<ParamField path="context" type="C" required>
+  Context object (typically `HookContext`)
+</ParamField>
+
+<ParamField path="status" type="Partial<ResolverStatus<T, C>>">
+  Optional resolver status for nested resolution
+</ParamField>
+
+**Returns:** `Promise<T>` - Resolved data object
+
+### resolveProperty
+
+Resolves a single property:
+
+```typescript
+const name = await userResolver.resolveProperty('name', data, context)
+```
+
+<ParamField path="name" type="keyof T" required>
+  Property name to resolve
+</ParamField>
+
+<ParamField path="data" type="D" required>
+  Data object containing the property
+</ParamField>
+
+<ParamField path="context" type="C" required>
+  Context object
+</ParamField>
+
+<ParamField path="status" type="Partial<ResolverStatus<T, C>>">
+  Optional resolver status
+</ParamField>
+
+**Returns:** `Promise<T[K]>` - Resolved property value
+
+### convert
+
+Converts data using the configured converter:
+
+```typescript
+const converted = await userResolver.convert(data, context)
+```
+
+<ParamField path="data" type="D" required>
+  Data to convert
+</ParamField>
+
+<ParamField path="context" type="C" required>
+  Context object
+</ParamField>
+
+<ParamField path="status" type="Partial<ResolverStatus<T, C>>">
+  Optional resolver status
+</ParamField>
+
+**Returns:** `Promise<T | undefined>` - Converted data
+
+## Property Resolvers
+
+Property resolver functions transform individual properties.
+
+### PropertyResolver
+
+Type signature for property resolvers:
+
+```typescript
+type PropertyResolver<T, V, C> = (
+  value: V | undefined,
+  obj: T,
+  context: C,
+  status: ResolverStatus<T, C>
+) => Promise<V | undefined> | V | undefined
+```
+
+<ParamField path="value" type="V | undefined">
+  Current value of the property
+</ParamField>
+
+<ParamField path="obj" type="T">
+  The entire data object being resolved
+</ParamField>
+
+<ParamField path="context" type="C">
+  Context object (e.g., `HookContext`)
+</ParamField>
+
+<ParamField path="status" type="ResolverStatus<T, C>">
+  Current resolution status with path and stack information
+</ParamField>
+
+**Returns:** Resolved value or `undefined` to remove the property
+
+### Example
+
+```typescript
+const userResolver = resolve<User, HookContext>({
+  // Remove sensitive data
+  password: async () => undefined,
+  
+  // Transform existing value
+  email: async (value) => value?.toLowerCase(),
+  
+  // Compute from other properties
+  fullName: async (value, user) => `${user.firstName} ${user.lastName}`,
+  
+  // Use context
+  isOwner: async (value, user, context) => {
+    return context.params.user?.id === user.id
+  }
+})
+```
+
+## virtual
+
+Creates a resolver for a computed property that has no initial value.
+
+```typescript
+const resolver = resolve<User, HookContext>({
+  name: virtual(async (user) => `${user.firstName} ${user.lastName}`)
+})
+```
+
+### Parameters
+
+<ParamField path="virtualResolver" type="VirtualResolver<T, V, C>" required>
+  Function to compute the virtual property
+</ParamField>
+
+**VirtualResolver signature:**
+
+```typescript
+type VirtualResolver<T, V, C> = (
+  obj: T,
+  context: C,
+  status: ResolverStatus<T, C>
+) => Promise<V | undefined> | V | undefined
+```
+
+### Returns
+
+Returns a `PropertyResolver<T, V, C>` marked as virtual.
+
+## Types
+
+### ResolverStatus
+
+Tracking object passed through resolution:
+
+```typescript
+interface ResolverStatus<T, C> {
+  path: string[]              // Current resolution path
+  originalContext?: C         // Original context from hook
+  properties?: (keyof T)[]    // Specific properties to resolve
+  stack: PropertyResolver[]   // Resolver call stack (prevents circular dependencies)
+}
+```
+
+### ResolverConverter
+
+Function to convert data before property resolution:
+
+```typescript
+type ResolverConverter<T, C> = (
+  obj: any,
+  context: C,
+  status: ResolverStatus<T, C>
+) => Promise<T | undefined> | T | undefined
+```
+
+### PropertyResolverMap
+
+Object mapping properties to their resolvers:
+
+```typescript
+type PropertyResolverMap<T, C> = {
+  [key in keyof T]?: PropertyResolver<T, T[key], C> | ReturnType<typeof virtual>
+}
+```
+
+## Examples
+
+### Basic Property Resolution
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+import type { HookContext } from '@feathersjs/feathers'
+
+interface User {
+  id: number
+  email: string
+  password: string
+  firstName: string
+  lastName: string
+  fullName: string
+}
+
+const userResolver = resolve<User, HookContext>({
+  password: async () => undefined,
+  fullName: async (value, user) => `${user.firstName} ${user.lastName}`
+})
+
+const result = await userResolver.resolve(
+  {
+    id: 1,
+    email: 'user@example.com',
+    password: 'secret',
+    firstName: 'John',
+    lastName: 'Doe'
+  },
+  context
+)
+// result: { id: 1, email: '...', firstName: 'John', lastName: 'Doe', fullName: 'John Doe' }
+```
+
+### Virtual Properties
+
+```typescript
+import { resolve, virtual } from '@feathersjs/schema'
+
+const userResolver = resolve<User, HookContext>({
+  // Virtual property - only computed, never has initial value
+  gravatar: virtual(async (user) => {
+    const hash = md5(user.email.toLowerCase())
+    return `https://www.gravatar.com/avatar/${hash}`
+  })
+})
+```
+
+### Context-Aware Resolution
+
+```typescript
+const messageResolver = resolve<Message, HookContext>({
+  userId: async (value, message, context) => {
+    // Associate with authenticated user
+    return context.params.user?.id
+  },
+  
+  canEdit: virtual(async (message, context) => {
+    const user = context.params.user
+    return user?.id === message.userId || user?.isAdmin
+  })
+})
+```
+
+### With Data Converter
+
+```typescript
+import { ObjectId } from 'mongodb'
+
+const messageResolver = resolve<Message, HookContext>({
+  properties: {
+    text: async (value) => value?.trim()
+  },
+  converter: async (data) => {
+    // Convert MongoDB ObjectId to string
+    return {
+      ...data,
+      id: data._id?.toString(),
+      userId: data.userId?.toString()
+    }
+  }
+})
+```
+
+### Selective Property Resolution
+
+```typescript
+// Resolve only specific properties
+const result = await userResolver.resolve(
+  data,
+  context,
+  { properties: ['fullName', 'email'] }
+)
+// Only resolves and returns fullName and email
+```
+
+### Nested Resolution
+
+```typescript
+const postResolver = resolve<Post, HookContext>({
+  author: async (value, post, context) => {
+    const user = await context.app.service('users').get(post.authorId)
+    // Resolve nested user object
+    return userResolver.resolve(user, context)
+  }
+})
+```

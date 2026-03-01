@@ -1,0 +1,541 @@
+---
+title: Local Strategy API
+description: Complete API reference for @feathersjs/authentication-local username/password authentication
+---
+
+The `@feathersjs/authentication-local` package provides local username and password authentication using bcrypt for password hashing.
+
+## Installation
+
+```bash
+npm install @feathersjs/authentication-local
+```
+
+## LocalStrategy
+
+Authentication strategy for username/password authentication with bcrypt password hashing.
+
+### Configuration
+
+Configure the local strategy in your authentication settings:
+
+```typescript
+interface LocalStrategyConfiguration {
+  usernameField: string
+  passwordField: string
+  hashSize?: number
+  service?: string
+  entity?: string
+  entityId?: string
+  errorMessage?: string
+  entityPasswordField?: string
+  entityUsernameField?: string
+}
+```
+
+<ParamField path="usernameField" type="string" required>
+  The field name for the username in the authentication request (e.g., 'email', 'username')
+</ParamField>
+
+<ParamField path="passwordField" type="string" required>
+  The field name for the password in the authentication request
+</ParamField>
+
+<ParamField path="hashSize" type="number" default="10">
+  The bcrypt hash size (cost factor). Higher values are more secure but slower
+</ParamField>
+
+<ParamField path="service" type="string">
+  The path of the entity service (inherited from main auth config)
+</ParamField>
+
+<ParamField path="entity" type="string">
+  The name of the entity (inherited from main auth config)
+</ParamField>
+
+<ParamField path="entityId" type="string">
+  The entity id field (inherited from main auth config)
+</ParamField>
+
+<ParamField path="errorMessage" type="string" default="Invalid login">
+  The error message to show when authentication fails
+</ParamField>
+
+<ParamField path="entityPasswordField" type="string">
+  The field name in the entity for the password (defaults to passwordField). Supports dot notation
+</ParamField>
+
+<ParamField path="entityUsernameField" type="string">
+  The field name in the entity for the username (defaults to usernameField). Supports dot notation
+</ParamField>
+
+**Example:**
+
+```typescript
+// config/default.json
+{
+  "authentication": {
+    "secret": "your-secret-key",
+    "authStrategies": ["jwt", "local"],
+    "service": "users",
+    "entity": "user",
+    "local": {
+      "usernameField": "email",
+      "passwordField": "password",
+      "hashSize": 10
+    }
+  }
+}
+```
+
+### Setup
+
+Register the local strategy with your authentication service:
+
+```typescript
+import { AuthenticationService } from '@feathersjs/authentication'
+import { LocalStrategy } from '@feathersjs/authentication-local'
+
+const authService = new AuthenticationService(app)
+authService.register('local', new LocalStrategy())
+```
+
+### Methods
+
+#### authenticate
+
+Authenticate a user with username and password.
+
+```typescript
+strategy.authenticate(
+  data: AuthenticationRequest,
+  params: Params
+): Promise<AuthenticationResult>
+```
+
+<ParamField path="data" type="AuthenticationRequest" required>
+  The authentication request containing username and password
+  
+  ```typescript
+  {
+    strategy: 'local',
+    email: 'user@example.com',
+    password: 'secret'
+  }
+  ```
+</ParamField>
+
+<ParamField path="params" type="Params" required>
+  Service call parameters
+</ParamField>
+
+<ResponseField name="authentication" type="object">
+  Authentication metadata with strategy name
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  The authenticated user entity
+</ResponseField>
+
+**Example:**
+
+```typescript
+const result = await app.service('authentication').create({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'secret123'
+})
+
+console.log(result.user) // User object
+console.log(result.accessToken) // JWT token
+```
+
+#### hashPassword
+
+Hash a plain text password using bcrypt.
+
+```typescript
+strategy.hashPassword(
+  password: string,
+  params: Params
+): Promise<string>
+```
+
+<ParamField path="password" type="string" required>
+  The plain text password to hash
+</ParamField>
+
+<ParamField path="params" type="Params" required>
+  Service call parameters
+</ParamField>
+
+**Example:**
+
+```typescript
+const localStrategy = authService.getStrategy('local')
+const hashedPassword = await localStrategy.hashPassword('secret123', {})
+```
+
+#### comparePassword
+
+Compare a plain text password with a hashed password.
+
+```typescript
+strategy.comparePassword(
+  entity: any,
+  password: string
+): Promise<any>
+```
+
+<ParamField path="entity" type="any" required>
+  The entity containing the hashed password
+</ParamField>
+
+<ParamField path="password" type="string" required>
+  The plain text password to compare
+</ParamField>
+
+#### findEntity
+
+Find an entity by username.
+
+```typescript
+strategy.findEntity(
+  username: string,
+  params: Params
+): Promise<any>
+```
+
+<ParamField path="username" type="string" required>
+  The username to search for
+</ParamField>
+
+<ParamField path="params" type="Params" required>
+  Service call parameters
+</ParamField>
+
+#### getEntityQuery
+
+Build the query for finding an entity. Override this to customize the query.
+
+```typescript
+strategy.getEntityQuery(
+  query: Query,
+  params: Params
+): Promise<Query>
+```
+
+<ParamField path="query" type="Query" required>
+  The base query
+</ParamField>
+
+<ParamField path="params" type="Params" required>
+  Service call parameters
+</ParamField>
+
+**Example:**
+
+```typescript
+class CustomLocalStrategy extends LocalStrategy {
+  async getEntityQuery(query, params) {
+    return {
+      ...query,
+      $limit: 1,
+      isActive: true // Only find active users
+    }
+  }
+}
+```
+
+## Hooks
+
+### hashPassword (deprecated)
+
+<Note>
+This hook is deprecated. Use the `passwordHash` resolver instead for better type safety and integration with Feathers schemas.
+</Note>
+
+Hash a password field before saving to the database.
+
+```typescript
+import { hooks } from '@feathersjs/authentication-local'
+
+hooks.hashPassword(field: string, options?: HashPasswordOptions)
+```
+
+<ParamField path="field" type="string" required>
+  The field name to hash
+</ParamField>
+
+<ParamField path="options" type="HashPasswordOptions">
+  Configuration options
+  
+  ```typescript
+  interface HashPasswordOptions {
+    authentication?: string
+    strategy?: string
+  }
+  ```
+</ParamField>
+
+**Example:**
+
+```typescript
+import { hooks } from '@feathersjs/authentication-local'
+
+app.service('users').hooks({
+  before: {
+    create: [hooks.hashPassword('password')],
+    update: [hooks.hashPassword('password')],
+    patch: [hooks.hashPassword('password')]
+  }
+})
+```
+
+### protect (deprecated)
+
+<Note>
+This hook is deprecated. Use Feathers schema dispatch resolvers for safe data representations.
+</Note>
+
+Remove fields from the response to prevent exposing sensitive data.
+
+```typescript
+import { hooks } from '@feathersjs/authentication-local'
+
+hooks.protect(...fields: string[])
+```
+
+<ParamField path="fields" type="string[]" required>
+  Field names to remove from the response
+</ParamField>
+
+**Example:**
+
+```typescript
+import { hooks } from '@feathersjs/authentication-local'
+
+app.service('users').hooks({
+  after: {
+    all: [hooks.protect('password')]
+  }
+})
+```
+
+## passwordHash Resolver
+
+The recommended way to hash passwords using Feathers schemas.
+
+```typescript
+import { passwordHash } from '@feathersjs/authentication-local'
+
+passwordHash(options: { service?: string; strategy: string })
+```
+
+<ParamField path="options.service" type="string">
+  The authentication service name (defaults to 'authentication')
+</ParamField>
+
+<ParamField path="options.strategy" type="string" required>
+  The local strategy name
+</ParamField>
+
+**Example:**
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+import { passwordHash } from '@feathersjs/authentication-local'
+
+// User data schema
+export const userDataResolver = resolve({
+  properties: {
+    password: async (value, user, context) => {
+      // Hash the password if it's being set
+      return passwordHash({ strategy: 'local' })(value, user, context)
+    }
+  }
+})
+
+// Apply to service
+app.service('users').hooks({
+  before: {
+    create: [resolveData(userDataResolver)],
+    update: [resolveData(userDataResolver)],
+    patch: [resolveData(userDataResolver)]
+  }
+})
+```
+
+## Protecting Password Fields
+
+Use Feathers schema dispatch resolvers to exclude password fields:
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+
+export const userDispatchResolver = resolve({
+  properties: {
+    password: async () => undefined // Remove password from responses
+  }
+})
+
+app.service('users').hooks({
+  after: {
+    all: [resolveDispatch(userDispatchResolver)]
+  }
+})
+```
+
+## Complete Example
+
+### Server Setup
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+import { LocalStrategy } from '@feathersjs/authentication-local'
+import { resolve } from '@feathersjs/schema'
+import { passwordHash } from '@feathersjs/authentication-local'
+
+const app = feathers()
+
+// Configure authentication
+app.set('authentication', {
+  secret: 'your-secret-key',
+  authStrategies: ['jwt', 'local'],
+  service: 'users',
+  entity: 'user',
+  local: {
+    usernameField: 'email',
+    passwordField: 'password'
+  }
+})
+
+// User data resolver with password hashing
+const userDataResolver = resolve({
+  properties: {
+    password: passwordHash({ strategy: 'local' })
+  }
+})
+
+// User dispatch resolver to exclude password
+const userDispatchResolver = resolve({
+  properties: {
+    password: async () => undefined
+  }
+})
+
+// Setup users service
+app.use('users', {
+  async create(data) {
+    // Store user logic
+    return { id: 1, ...data }
+  },
+  async get(id) {
+    // Get user logic
+    return { id, email: 'user@example.com' }
+  },
+  async find(params) {
+    // Find users logic
+    return []
+  }
+})
+
+app.service('users').hooks({
+  before: {
+    create: [resolveData(userDataResolver)],
+    update: [resolveData(userDataResolver)],
+    patch: [resolveData(userDataResolver)]
+  },
+  after: {
+    all: [resolveDispatch(userDispatchResolver)]
+  }
+})
+
+// Setup authentication
+const authService = new AuthenticationService(app)
+authService.register('jwt', new JWTStrategy())
+authService.register('local', new LocalStrategy())
+app.use('authentication', authService)
+```
+
+### Client Usage
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import rest from '@feathersjs/rest-client'
+import authClient from '@feathersjs/authentication-client'
+
+const app = feathers()
+app.configure(rest('http://localhost:3030').fetch(window.fetch))
+app.configure(authClient())
+
+// Register a new user
+const user = await app.service('users').create({
+  email: 'user@example.com',
+  password: 'secret123'
+})
+
+// Login
+const result = await app.authenticate({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'secret123'
+})
+
+console.log(result.accessToken) // JWT token
+console.log(result.user) // User object (without password)
+```
+
+## Custom Local Strategy
+
+Extend `LocalStrategy` for custom authentication logic:
+
+```typescript
+import { LocalStrategy } from '@feathersjs/authentication-local'
+import { NotAuthenticated } from '@feathersjs/errors'
+
+class CustomLocalStrategy extends LocalStrategy {
+  async getEntityQuery(query, params) {
+    // Only authenticate active users
+    return {
+      ...query,
+      $limit: 1,
+      isActive: true,
+      isVerified: true
+    }
+  }
+
+  async comparePassword(entity, password) {
+    // Add custom password validation
+    if (entity.failedLoginAttempts >= 5) {
+      throw new NotAuthenticated('Account locked due to too many failed attempts')
+    }
+
+    try {
+      return await super.comparePassword(entity, password)
+    } catch (error) {
+      // Track failed login attempts
+      await this.entityService.patch(entity.id, {
+        failedLoginAttempts: entity.failedLoginAttempts + 1
+      })
+      throw error
+    }
+  }
+
+  async authenticate(data, params) {
+    const result = await super.authenticate(data, params)
+    
+    // Reset failed login attempts on success
+    await this.entityService.patch(result.user.id, {
+      failedLoginAttempts: 0,
+      lastLoginAt: new Date()
+    })
+    
+    return result
+  }
+}
+
+// Register custom strategy
+authService.register('local', new CustomLocalStrategy())
+```

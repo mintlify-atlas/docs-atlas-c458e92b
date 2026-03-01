@@ -1,0 +1,730 @@
+---
+title: Local Authentication Strategy
+description: Implement secure username and password authentication with bcrypt password hashing and customizable validation
+---
+
+The Local authentication strategy provides traditional username and password authentication for Feathers applications. It uses bcrypt for secure password hashing and supports customizable field names and validation.
+
+## How It Works
+
+The Local strategy:
+
+1. **Accepts** login credentials (username/email and password)
+2. **Queries** the user database by username field
+3. **Compares** the provided password with the stored bcrypt hash
+4. **Returns** the authenticated user entity
+5. **Creates** a JWT access token (via authentication service)
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @feathersjs/authentication-local --save
+```
+
+```bash yarn
+yarn add @feathersjs/authentication-local
+```
+
+```bash pnpm
+pnpm add @feathersjs/authentication-local
+```
+</CodeGroup>
+
+## Setup
+
+<Steps>
+  <Step title="Install Dependencies">
+    The local strategy requires the base authentication package:
+
+    ```bash
+    npm install @feathersjs/authentication @feathersjs/authentication-local
+    ```
+  </Step>
+
+  <Step title="Configure Local Strategy">
+    Add local strategy configuration:
+
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "secret": "your-secret-key",
+        "entity": "user",
+        "service": "users",
+        "authStrategies": ["jwt", "local"],
+        "local": {
+          "usernameField": "email",
+          "passwordField": "password"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Register Strategy">
+    Register the local strategy with your authentication service:
+
+    ```typescript
+    import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+    import { LocalStrategy } from '@feathersjs/authentication-local'
+
+    const authentication = new AuthenticationService(app)
+    
+    authentication.register('jwt', new JWTStrategy())
+    authentication.register('local', new LocalStrategy())
+
+    app.use('/authentication', authentication)
+    ```
+  </Step>
+
+  <Step title="Hash Passwords">
+    Set up password hashing for user creation and updates:
+
+    ```typescript
+    import { passwordHash } from '@feathersjs/authentication-local'
+    import { resolve } from '@feathersjs/schema'
+
+    // Define user schema with password hashing
+    const userDataResolver = resolve({
+      password: passwordHash({ strategy: 'local' })
+    })
+
+    app.service('users').hooks({
+      before: {
+        create: [resolveData(userDataResolver)],
+        update: [resolveData(userDataResolver)],
+        patch: [resolveData(userDataResolver)]
+      }
+    })
+    ```
+  </Step>
+</Steps>
+
+## Configuration Options
+
+### Required Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `usernameField` | `string` | Field name for username in authentication request (e.g., 'email', 'username') |
+| `passwordField` | `string` | Field name for password in authentication request (e.g., 'password') |
+
+### Optional Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `hashSize` | `number` | `10` | BCrypt salt rounds (higher = more secure but slower) |
+| `errorMessage` | `string` | `'Invalid login'` | Generic error message to prevent user enumeration |
+| `entityUsernameField` | `string` | `usernameField` | Field name in database (if different from request) |
+| `entityPasswordField` | `string` | `passwordField` | Password field name in database (if different from request) |
+| `entity` | `string` | From auth config | Entity name (e.g., 'user') |
+| `service` | `string` | From auth config | Entity service path (e.g., 'users') |
+| `entityId` | `string` | From auth config | Entity ID property name |
+
+## Basic Usage
+
+### Client Login
+
+```typescript
+// Login with email and password
+const result = await app.service('authentication').create({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'password123'
+})
+
+console.log(result)
+// {
+//   accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+//   authentication: {
+//     strategy: 'local',
+//     payload: { ... }
+//   },
+//   user: {
+//     id: '123',
+//     email: 'user@example.com',
+//     // password field is excluded
+//   }
+// }
+```
+
+### Different Field Names
+
+```typescript
+// config/default.json
+{
+  "authentication": {
+    "local": {
+      "usernameField": "username",  // Accept 'username' in request
+      "passwordField": "password"
+    }
+  }
+}
+
+// Login with username
+await app.service('authentication').create({
+  strategy: 'local',
+  username: 'johndoe',
+  password: 'password123'
+})
+```
+
+## Password Hashing
+
+### Using Schema Resolvers (Recommended)
+
+The modern approach uses Feathers schema resolvers:
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+import { passwordHash } from '@feathersjs/authentication-local'
+
+// Define the data resolver
+const userDataResolver = resolve({
+  properties: {
+    password: passwordHash({ strategy: 'local' })
+  }
+})
+
+// Apply to service hooks
+app.service('users').hooks({
+  before: {
+    create: [resolveData(userDataResolver)],
+    patch: [resolveData(userDataResolver)]
+  }
+})
+```
+
+### Using Legacy Hook (Deprecated)
+
+<Warning>
+  The `hashPassword` hook is deprecated. Use schema resolvers instead.
+</Warning>
+
+```typescript
+import { hooks } from '@feathersjs/authentication-local'
+
+app.service('users').hooks({
+  before: {
+    create: [hooks.hashPassword('password')],
+    update: [hooks.hashPassword('password')],
+    patch: [hooks.hashPassword('password')]
+  }
+})
+```
+
+### Manual Password Hashing
+
+```typescript
+const authService = app.service('authentication')
+const localStrategy = authService.getStrategy('local')
+
+// Hash a password
+const hashedPassword = await localStrategy.hashPassword('password123', {})
+
+// Create user with hashed password
+await app.service('users').create({
+  email: 'user@example.com',
+  password: hashedPassword
+})
+```
+
+### BCrypt Configuration
+
+The `hashSize` option controls bcrypt complexity:
+
+```typescript
+// config/default.json
+{
+  "authentication": {
+    "local": {
+      "usernameField": "email",
+      "passwordField": "password",
+      "hashSize": 12  // Higher = more secure, slower (10-12 recommended)
+    }
+  }
+}
+```
+
+**BCrypt rounds comparison:**
+- `10` rounds: ~100ms (default, good for most apps)
+- `12` rounds: ~400ms (more secure)
+- `14` rounds: ~1600ms (very secure, may impact UX)
+
+## Protecting Password Fields
+
+### Using Schema Dispatch Resolvers (Recommended)
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+
+// Define external resolver to exclude password
+const userExternalResolver = resolve({
+  properties: {
+    password: async () => undefined  // Never return password
+  }
+})
+
+app.service('users').hooks({
+  around: {
+    all: [resolveExternal(userExternalResolver)]
+  }
+})
+```
+
+### Using Legacy Hook (Deprecated)
+
+<Warning>
+  The `protect` hook is deprecated. Use schema dispatch resolvers instead.
+</Warning>
+
+```typescript
+import { hooks } from '@feathersjs/authentication-local'
+
+app.service('users').hooks({
+  after: {
+    all: [hooks.protect('password')]
+  }
+})
+```
+
+## Custom Validation
+
+### Custom Field Mapping
+
+Map different field names between request and database:
+
+```typescript
+// config/default.json - Request uses 'email', database uses 'emailAddress'
+{
+  "authentication": {
+    "local": {
+      "usernameField": "email",           // Field in authentication request
+      "entityUsernameField": "emailAddress", // Field in database
+      "passwordField": "password",
+      "entityPasswordField": "hashedPassword" // Field in database
+    }
+  }
+}
+```
+
+### Custom Query
+
+Customize the database query:
+
+```typescript
+import { LocalStrategy } from '@feathersjs/authentication-local'
+
+class CustomLocalStrategy extends LocalStrategy {
+  async getEntityQuery(query, params) {
+    // Add custom query parameters
+    return {
+      ...query,
+      $limit: 1,
+      isActive: true,          // Only find active users
+      emailVerified: true      // Only verified emails
+    }
+  }
+}
+
+authentication.register('local', new CustomLocalStrategy())
+```
+
+### Custom Password Comparison
+
+```typescript
+class CustomLocalStrategy extends LocalStrategy {
+  async comparePassword(entity, password) {
+    // Add custom logic before comparison
+    if (entity.loginAttempts > 5) {
+      throw new NotAuthenticated('Account locked due to too many failed attempts')
+    }
+    
+    try {
+      return await super.comparePassword(entity, password)
+    } catch (error) {
+      // Increment failed login attempts
+      await this.entityService.patch(entity.id, {
+        loginAttempts: entity.loginAttempts + 1
+      })
+      throw error
+    }
+  }
+}
+```
+
+## Security Best Practices
+
+### Password Requirements
+
+Validate password strength on user creation:
+
+```typescript
+import { BadRequest } from '@feathersjs/errors'
+
+const validatePassword = async (context) => {
+  if (context.data.password) {
+    const password = context.data.password
+    
+    if (password.length < 8) {
+      throw new BadRequest('Password must be at least 8 characters')
+    }
+    
+    if (!/[A-Z]/.test(password)) {
+      throw new BadRequest('Password must contain at least one uppercase letter')
+    }
+    
+    if (!/[a-z]/.test(password)) {
+      throw new BadRequest('Password must contain at least one lowercase letter')
+    }
+    
+    if (!/[0-9]/.test(password)) {
+      throw new BadRequest('Password must contain at least one number')
+    }
+    
+    if (!/[^A-Za-z0-9]/.test(password)) {
+      throw new BadRequest('Password must contain at least one special character')
+    }
+  }
+}
+
+app.service('users').hooks({
+  before: {
+    create: [validatePassword],
+    patch: [validatePassword]
+  }
+})
+```
+
+### Generic Error Messages
+
+<Warning>
+  Never reveal whether a username exists in error messages. This prevents user enumeration attacks.
+</Warning>
+
+```typescript
+// strategy.ts:46-70
+// The local strategy returns a generic error message
+// for both "user not found" and "invalid password"
+
+const { errorMessage } = this.configuration
+
+if (!username) {
+  throw new NotAuthenticated(errorMessage)  // Generic message
+}
+
+const entity = await this.findEntity(username, params)
+if (!entity) {
+  throw new NotAuthenticated(errorMessage)  // Same message
+}
+
+await this.comparePassword(entity, password)
+// If password invalid, throws same generic message
+```
+
+### Rate Limiting
+
+Implement rate limiting to prevent brute force attacks:
+
+```typescript
+import rateLimit from 'express-rate-limit'
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per window
+  message: 'Too many login attempts, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false
+})
+
+// Apply to authentication service
+app.service('authentication').hooks({
+  before: {
+    create: [
+      async (context) => {
+        if (context.data.strategy === 'local') {
+          // Apply rate limiting for local strategy only
+          await new Promise((resolve, reject) => {
+            loginLimiter(context.params, {}, (error) => {
+              error ? reject(error) : resolve()
+            })
+          })
+        }
+      }
+    ]
+  }
+})
+```
+
+### Account Lockout
+
+Lock accounts after repeated failed attempts:
+
+```typescript
+class SecureLocalStrategy extends LocalStrategy {
+  async findEntity(username, params) {
+    const entity = await super.findEntity(username, params)
+    
+    // Check if account is locked
+    if (entity.lockedUntil && entity.lockedUntil > new Date()) {
+      throw new NotAuthenticated(
+        `Account locked until ${entity.lockedUntil.toISOString()}`
+      )
+    }
+    
+    return entity
+  }
+  
+  async comparePassword(entity, password) {
+    try {
+      const result = await super.comparePassword(entity, password)
+      
+      // Reset failed attempts on successful login
+      if (entity.failedLoginAttempts > 0) {
+        await this.entityService.patch(entity.id, {
+          failedLoginAttempts: 0,
+          lockedUntil: null
+        })
+      }
+      
+      return result
+    } catch (error) {
+      // Increment failed attempts
+      const attempts = (entity.failedLoginAttempts || 0) + 1
+      const updates = { failedLoginAttempts: attempts }
+      
+      // Lock account after 5 failed attempts
+      if (attempts >= 5) {
+        updates.lockedUntil = new Date(Date.now() + 30 * 60 * 1000) // 30 min
+      }
+      
+      await this.entityService.patch(entity.id, updates)
+      throw error
+    }
+  }
+}
+```
+
+### Password History
+
+Prevent password reuse:
+
+```typescript
+import bcrypt from 'bcryptjs'
+
+const preventPasswordReuse = async (context) => {
+  if (context.data.password && context.id) {
+    const user = await context.service.get(context.id)
+    const previousPasswords = user.passwordHistory || []
+    
+    // Check against last 5 passwords
+    for (const oldHash of previousPasswords.slice(-5)) {
+      const isReused = await bcrypt.compare(context.data.password, oldHash)
+      if (isReused) {
+        throw new BadRequest('Cannot reuse previous passwords')
+      }
+    }
+    
+    // Add current password to history
+    context.data.passwordHistory = [
+      ...previousPasswords,
+      user.password
+    ].slice(-5)
+  }
+}
+
+app.service('users').hooks({
+  before: {
+    patch: [preventPasswordReuse]
+  }
+})
+```
+
+## Common Patterns
+
+### Email/Username Login
+
+Support both email and username:
+
+```typescript
+class FlexibleLocalStrategy extends LocalStrategy {
+  async getEntityQuery(query, params) {
+    const identifier = Object.values(query)[0]
+    
+    // Search by email OR username
+    return {
+      $or: [
+        { email: identifier },
+        { username: identifier }
+      ],
+      $limit: 1
+    }
+  }
+}
+
+// config/default.json
+{
+  "authentication": {
+    "local": {
+      "usernameField": "identifier",  // Generic field name
+      "passwordField": "password"
+    }
+  }
+}
+
+// Login with email or username
+await app.service('authentication').create({
+  strategy: 'local',
+  identifier: 'user@example.com',  // or 'johndoe'
+  password: 'password123'
+})
+```
+
+### Multi-Tenancy
+
+Scope authentication to tenants:
+
+```typescript
+class TenantLocalStrategy extends LocalStrategy {
+  async getEntityQuery(query, params) {
+    const baseQuery = await super.getEntityQuery(query, params)
+    
+    // Require tenantId from request
+    if (!params.tenantId) {
+      throw new NotAuthenticated('Tenant ID required')
+    }
+    
+    return {
+      ...baseQuery,
+      tenantId: params.tenantId
+    }
+  }
+}
+
+// Login with tenant context
+await app.service('authentication').create(
+  {
+    strategy: 'local',
+    email: 'user@example.com',
+    password: 'password123'
+  },
+  {
+    tenantId: 'tenant-123'
+  }
+)
+```
+
+### Two-Factor Authentication
+
+```typescript
+class TwoFactorLocalStrategy extends LocalStrategy {
+  async authenticate(data, params) {
+    // First verify username/password
+    const result = await super.authenticate(data, params)
+    const user = result[this.configuration.entity]
+    
+    // Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      if (!data.twoFactorCode) {
+        throw new NotAuthenticated('Two-factor code required')
+      }
+      
+      // Verify 2FA code
+      const isValidCode = await this.verifyTwoFactorCode(
+        user.twoFactorSecret,
+        data.twoFactorCode
+      )
+      
+      if (!isValidCode) {
+        throw new NotAuthenticated('Invalid two-factor code')
+      }
+    }
+    
+    return result
+  }
+  
+  async verifyTwoFactorCode(secret, code) {
+    // Implement TOTP verification
+    // Example using speakeasy library
+    const speakeasy = require('speakeasy')
+    return speakeasy.totp.verify({
+      secret,
+      encoding: 'base32',
+      token: code,
+      window: 2
+    })
+  }
+}
+```
+
+## Troubleshooting
+
+### Invalid Login Error
+
+```typescript
+// Generic "Invalid login" error can mean:
+// 1. Username not found
+// 2. Password incorrect
+// 3. User query returned no results
+
+// To debug (only in development):
+class DebugLocalStrategy extends LocalStrategy {
+  async findEntity(username, params) {
+    try {
+      return await super.findEntity(username, params)
+    } catch (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('User not found:', username)
+      }
+      throw error
+    }
+  }
+}
+```
+
+### Password Not Hashing
+
+```typescript
+// Ensure password hashing hook runs before create/patch
+app.service('users').hooks({
+  before: {
+    create: [
+      resolveData(userDataResolver),  // Must be here
+      otherHooks()
+    ]
+  }
+})
+
+// Verify password is hashed:
+const user = await app.service('users').get(userId)
+console.log(user.password) // Should start with $2a$ or $2b$ (bcrypt)
+```
+
+### Configuration Errors
+
+```typescript
+// Error: 'local' authentication strategy requires a 'usernameField' setting
+// Solution: Add required fields to config
+
+// config/default.json
+{
+  "authentication": {
+    "local": {
+      "usernameField": "email",      // Required
+      "passwordField": "password"    // Required
+    }
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="JWT Strategy" icon="key" href="/guides/authentication/jwt">
+    Understand JWT token authentication
+  </Card>
+  <Card title="OAuth Strategy" icon="users" href="/guides/authentication/oauth">
+    Add social login with OAuth providers
+  </Card>
+</CardGroup>

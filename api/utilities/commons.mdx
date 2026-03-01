@@ -1,0 +1,453 @@
+---
+title: Commons Utilities
+description: Shared utility functions and helpers used throughout the Feathers framework
+---
+
+The `@feathersjs/commons` package provides a collection of utility functions and helpers that are used throughout the Feathers ecosystem. These utilities offer lightweight alternatives to lodash-style operations and common JavaScript patterns.
+
+## Installation
+
+```bash
+npm install @feathersjs/commons
+```
+
+## String Utilities
+
+### stripSlashes
+
+Removes all leading and trailing slashes from a path string.
+
+```typescript
+import { stripSlashes } from '@feathersjs/commons'
+
+const path = stripSlashes('/api/users/')
+console.log(path) // 'api/users'
+```
+
+<ParamField path="name" type="string" required>
+  The string to strip slashes from
+</ParamField>
+
+<ResponseField name="return" type="string">
+  The string with leading and trailing slashes removed
+</ResponseField>
+
+## Object Utilities
+
+The `_` object provides a collection of utility functions for working with objects and arrays.
+
+### _.each
+
+Iterates over an object or array and executes a callback for each element.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+_.each({ name: 'John', age: 30 }, (value, key) => {
+  console.log(`${key}: ${value}`)
+})
+// Output: name: John, age: 30
+
+_.each(['a', 'b', 'c'], (value, index) => {
+  console.log(`${index}: ${value}`)
+})
+// Output: 0: a, 1: b, 2: c
+```
+
+<ParamField path="obj" type="any" required>
+  The object or array to iterate over
+</ParamField>
+
+<ParamField path="callback" type="(value: any, key: string) => void" required>
+  Function called for each element with value and key/index
+</ParamField>
+
+### _.some
+
+Tests whether at least one element passes the test implemented by the callback.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const hasAdmin = _.some({ user1: 'admin', user2: 'user' }, (role) => role === 'admin')
+console.log(hasAdmin) // true
+```
+
+<ParamField path="value" type="any" required>
+  The object to test
+</ParamField>
+
+<ParamField path="callback" type="(value: any, key: string) => boolean" required>
+  Function to test each element
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if at least one element passes the test, false otherwise
+</ResponseField>
+
+### _.every
+
+Tests whether all elements pass the test implemented by the callback.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const allActive = _.every({ user1: 'active', user2: 'active' }, (status) => status === 'active')
+console.log(allActive) // true
+```
+
+<ParamField path="value" type="any" required>
+  The object to test
+</ParamField>
+
+<ParamField path="callback" type="(value: any, key: string) => boolean" required>
+  Function to test each element
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if all elements pass the test, false otherwise
+</ResponseField>
+
+### _.keys
+
+Returns an array of the object's keys.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const keys = _.keys({ name: 'John', age: 30 })
+console.log(keys) // ['name', 'age']
+```
+
+<ParamField path="obj" type="any" required>
+  The object to extract keys from
+</ParamField>
+
+<ResponseField name="return" type="string[]">
+  Array of object keys
+</ResponseField>
+
+### _.values
+
+Returns an array of the object's values.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const values = _.values({ name: 'John', age: 30 })
+console.log(values) // ['John', 30]
+```
+
+<ParamField path="obj" type="any" required>
+  The object to extract values from
+</ParamField>
+
+<ResponseField name="return" type="any[]">
+  Array of object values
+</ResponseField>
+
+### _.isMatch
+
+Checks if all properties in the item object match those in the source object.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const user = { name: 'John', age: 30, role: 'admin' }
+const matches = _.isMatch(user, { name: 'John', age: 30 })
+console.log(matches) // true
+```
+
+<ParamField path="obj" type="any" required>
+  The source object to check against
+</ParamField>
+
+<ParamField path="item" type="any" required>
+  The object with properties to match
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if all item properties match obj properties
+</ResponseField>
+
+### _.isEmpty
+
+Checks if an object has no properties.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+console.log(_.isEmpty({})) // true
+console.log(_.isEmpty({ name: 'John' })) // false
+```
+
+<ParamField path="obj" type="any" required>
+  The object to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if the object has no keys
+</ResponseField>
+
+### _.isObject
+
+Checks if a value is a plain object (not an array or null).
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+console.log(_.isObject({})) // true
+console.log(_.isObject([])) // false
+console.log(_.isObject(null)) // false
+```
+
+<ParamField path="item" type="any" required>
+  The value to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if the value is a plain object
+</ResponseField>
+
+### _.isObjectOrArray
+
+Checks if a value is an object or array (not null).
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+console.log(_.isObjectOrArray({})) // true
+console.log(_.isObjectOrArray([])) // true
+console.log(_.isObjectOrArray(null)) // false
+```
+
+<ParamField path="value" type="any" required>
+  The value to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if the value is an object or array
+</ResponseField>
+
+### _.extend
+
+Shallow merges multiple objects into the first object.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const result = _.extend({ a: 1 }, { b: 2 }, { c: 3 })
+console.log(result) // { a: 1, b: 2, c: 3 }
+```
+
+<ParamField path="first" type="any" required>
+  The target object to extend
+</ParamField>
+
+<ParamField path="rest" type="any[]">
+  Additional objects to merge into the target
+</ParamField>
+
+<ResponseField name="return" type="any">
+  The extended target object
+</ResponseField>
+
+### _.omit
+
+Creates a new object with specified keys removed.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const user = { name: 'John', password: 'secret', age: 30 }
+const safe = _.omit(user, 'password')
+console.log(safe) // { name: 'John', age: 30 }
+```
+
+<ParamField path="obj" type="any" required>
+  The source object
+</ParamField>
+
+<ParamField path="keys" type="string[]" required>
+  Keys to omit from the result
+</ParamField>
+
+<ResponseField name="return" type="any">
+  New object without the specified keys
+</ResponseField>
+
+### _.pick
+
+Creates a new object with only the specified keys.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const user = { name: 'John', password: 'secret', age: 30 }
+const safe = _.pick(user, 'name', 'age')
+console.log(safe) // { name: 'John', age: 30 }
+```
+
+<ParamField path="source" type="any" required>
+  The source object
+</ParamField>
+
+<ParamField path="keys" type="string[]" required>
+  Keys to include in the result
+</ParamField>
+
+<ResponseField name="return" type="any">
+  New object with only the specified keys
+</ResponseField>
+
+### _.merge
+
+Recursively merges the source object into the target object.
+
+```typescript
+import { _ } from '@feathersjs/commons'
+
+const target = { 
+  user: { name: 'John', settings: { theme: 'dark' } } 
+}
+const source = { 
+  user: { settings: { language: 'en' } } 
+}
+
+_.merge(target, source)
+console.log(target)
+// { user: { name: 'John', settings: { theme: 'dark', language: 'en' } } }
+```
+
+<ParamField path="target" type="any" required>
+  The target object to merge into
+</ParamField>
+
+<ParamField path="source" type="any" required>
+  The source object to merge from
+</ParamField>
+
+<ResponseField name="return" type="any">
+  The merged target object
+</ResponseField>
+
+## Promise Utilities
+
+### isPromise
+
+Duck-checks if an object looks like a promise.
+
+```typescript
+import { isPromise } from '@feathersjs/commons'
+
+console.log(isPromise(Promise.resolve())) // true
+console.log(isPromise({ then: () => {} })) // true
+console.log(isPromise(null)) // false
+```
+
+<ParamField path="result" type="any" required>
+  The value to check
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  True if the value has a then method
+</ResponseField>
+
+## Symbol Utilities
+
+### createSymbol
+
+Creates a symbol using `Symbol.for()` if available, otherwise returns the string.
+
+```typescript
+import { createSymbol } from '@feathersjs/commons'
+
+const sym = createSymbol('my-symbol')
+console.log(typeof sym) // 'symbol'
+```
+
+<ParamField path="name" type="string" required>
+  The name for the symbol
+</ParamField>
+
+<ResponseField name="return" type="symbol | string">
+  A symbol created with Symbol.for(), or the name string if Symbol is unavailable
+</ResponseField>
+
+## Debug Utilities
+
+### createDebug
+
+Creates a debug function for a specific namespace.
+
+```typescript
+import { createDebug } from '@feathersjs/commons'
+
+const debug = createDebug('@myapp/users')
+
+debug('User created:', { id: 1, name: 'John' })
+```
+
+<ParamField path="name" type="string" required>
+  The namespace for the debug function
+</ParamField>
+
+<ResponseField name="return" type="DebugFunction">
+  A debug function for the specified namespace
+</ResponseField>
+
+### setDebug
+
+Sets a custom debug initializer for all debug instances.
+
+```typescript
+import { setDebug } from '@feathersjs/commons'
+import debug from 'debug'
+
+setDebug(debug)
+```
+
+<ParamField path="debug" type="DebugInitializer" required>
+  The debug initializer function
+</ParamField>
+
+### noopDebug
+
+A no-operation debug function that does nothing.
+
+```typescript
+import { noopDebug } from '@feathersjs/commons'
+
+const debug = noopDebug()
+debug('This will not output anything')
+```
+
+<ResponseField name="return" type="DebugFunction">
+  A function that does nothing when called
+</ResponseField>
+
+## Type Definitions
+
+### KeyValueCallback
+
+Callback function type for object iteration methods.
+
+```typescript
+type KeyValueCallback<T> = (value: any, key: string) => T
+```
+
+### DebugFunction
+
+Function type for debug logging.
+
+```typescript
+type DebugFunction = (...args: any[]) => void
+```
+
+### DebugInitializer
+
+Function type for creating debug instances.
+
+```typescript
+type DebugInitializer = (name: string) => DebugFunction
+```

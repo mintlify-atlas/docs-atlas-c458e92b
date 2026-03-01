@@ -1,0 +1,729 @@
+---
+title: 'Tutorial: Build a Real-time Chat Application'
+description: 'Learn Feathers by building a complete real-time chat app with authentication, messages, and users'
+---
+
+## What We'll Build
+
+In this tutorial, we'll build a real-time chat application with:
+
+- User authentication (JWT)
+- Real-time messages via Socket.io
+- User management
+- Message history with pagination
+- Type-safe TypeScript throughout
+
+<Note>
+  This tutorial covers core Feathers concepts by building a real application. We'll use actual code from the Feathers framework source.
+</Note>
+
+## Prerequisites
+
+- Node.js 20 or later
+- Basic TypeScript/JavaScript knowledge
+- Familiarity with async/await
+
+## Project Setup
+
+<Steps>
+  <Step title="Initialize the project">
+    Create a new Feathers application:
+
+    ```bash
+    npm create feathers chat-app
+    cd chat-app
+    ```
+
+    When prompted:
+    - Choose **TypeScript**
+    - Select **Express** as the HTTP framework
+    - Choose **Memory** for the database (for simplicity)
+    - Select **Local Authentication** (username/password)
+  </Step>
+
+  <Step title="Install dependencies">
+    The CLI installs dependencies automatically, but you can also install them manually:
+
+    ```bash
+    npm install @feathersjs/feathers @feathersjs/express @feathersjs/socketio \
+                @feathersjs/authentication @feathersjs/authentication-local \
+                @feathersjs/memory @feathersjs/schema @feathersjs/typebox
+    ```
+  </Step>
+
+  <Step title="Project structure">
+    Your project structure should look like:
+
+    ```
+    chat-app/
+    ├── src/
+    │   ├── services/
+    │   │   ├── messages/
+    │   │   └── users/
+    │   ├── app.ts
+    │   └── index.ts
+    ├── package.json
+    └── tsconfig.json
+    ```
+  </Step>
+</Steps>
+
+## Building the Application
+
+### 1. Create the Feathers App
+
+Let's start by creating the main application instance:
+
+```typescript src/app.ts
+import { feathers } from '@feathersjs/feathers'
+import express, {
+  rest,
+  json,
+  urlencoded,
+  cors,
+  compression,
+  errorHandler,
+  notFound
+} from '@feathersjs/express'
+import socketio from '@feathersjs/socketio'
+
+// Create the Feathers app
+const app = express(feathers())
+
+// Configure middleware
+app.use(cors())
+app.use(compression())
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Configure transports
+app.configure(rest())
+app.configure(socketio())
+
+export { app }
+```
+
+This creates an Express-compatible Feathers application, just like in the source:
+
+```typescript packages/express/src/index.ts
+export default function feathersExpress<S = any, C = any>(
+  feathersApp?: FeathersApplication<S, C>,
+  expressApp: Express = express()
+): Application<S, C> {
+  if (!feathersApp) {
+    return expressApp as any
+  }
+
+  if (typeof feathersApp.setup !== 'function') {
+    throw new Error('@feathersjs/express requires a valid Feathers application instance')
+  }
+
+  const app = expressApp as any as Application<S, C>
+  // ... merges Feathers and Express functionality
+
+  return app
+}
+```
+
+### 2. Create the Users Service
+
+Users need to authenticate, so let's create a users service:
+
+```typescript src/services/users/users.schema.ts
+import { Type } from '@feathersjs/typebox'
+import type { Static } from '@feathersjs/typebox'
+
+// Define the user schema
+export const userSchema = Type.Object(
+  {
+    id: Type.Number(),
+    email: Type.String({ format: 'email' }),
+    password: Type.String(),
+    createdAt: Type.Number(),
+    updatedAt: Type.Number()
+  },
+  { $id: 'User', additionalProperties: false }
+)
+
+export type User = Static<typeof userSchema>
+
+// Data for creating a user (no id yet)
+export const userDataSchema = Type.Pick(userSchema, ['email', 'password'])
+export type UserData = Static<typeof userDataSchema>
+
+// User data that's safe to return to clients (no password)
+export const userExternalSchema = Type.Omit(userSchema, ['password'])
+export type UserExternal = Static<typeof userExternalSchema>
+```
+
+```typescript src/services/users/users.service.ts
+import { memory } from '@feathersjs/memory'
+import type { Application } from '../../declarations'
+
+export const userPath = 'users'
+
+export const userMethods = ['find', 'get', 'create', 'patch', 'remove'] as const
+
+export class UserService extends memory({
+  id: 'id',
+  startId: 1,
+  paginate: {
+    default: 10,
+    max: 50
+  }
+}) {}
+
+export const users = (app: Application) => {
+  // Register the service
+  app.use(userPath, new UserService(), {
+    methods: userMethods
+  })
+
+  // Add hooks
+  app.service(userPath).hooks({
+    before: {
+      create: [
+        async (context) => {
+          // Add timestamps
+          context.data.createdAt = Date.now()
+          context.data.updatedAt = Date.now()
+        }
+      ],
+      patch: [
+        async (context) => {
+          // Update timestamp
+          context.data.updatedAt = Date.now()
+        }
+      ]
+    },
+    after: {
+      all: [
+        async (context) => {
+          // Remove password from responses
+          if (context.result) {
+            if (Array.isArray(context.result)) {
+              context.result = context.result.map(user => {
+                const { password, ...rest } = user
+                return rest
+              })
+            } else if (context.result.data) {
+              // Paginated result
+              context.result.data = context.result.data.map(user => {
+                const { password, ...rest } = user
+                return rest
+              })
+            } else {
+              const { password, ...rest } = context.result
+              context.result = rest
+            }
+          }
+        }
+      ]
+    }
+  })
+}
+```
+
+The memory adapter implements all CRUD methods:
+
+```typescript packages/memory/src/index.ts
+export class MemoryService<
+  Result = any,
+  Data = Partial<Result>,
+  ServiceParams extends AdapterParams = AdapterParams,
+  PatchData = Partial<Data>
+> extends MemoryAdapter<Result, Data, ServiceParams, PatchData> {
+  async find(params?: ServiceParams): Promise<Paginated<Result> | Result[]> {
+    return this._find({
+      ...params,
+      query: await this.sanitizeQuery(params)
+    })
+  }
+
+  async get(id: Id, params?: ServiceParams): Promise<Result> {
+    return this._get(id, {
+      ...params,
+      query: await this.sanitizeQuery(params)
+    })
+  }
+
+  async create(data: Data | Data[], params?: ServiceParams): Promise<Result | Result[]> {
+    if (Array.isArray(data) && !this.allowsMulti('create', params)) {
+      throw new MethodNotAllowed('Can not create multiple entries')
+    }
+    return this._create(data, params)
+  }
+}
+```
+
+### 3. Create the Messages Service
+
+Now let's create the messages service:
+
+```typescript src/services/messages/messages.schema.ts
+import { Type } from '@feathersjs/typebox'
+import type { Static } from '@feathersjs/typebox'
+
+export const messageSchema = Type.Object(
+  {
+    id: Type.Number(),
+    text: Type.String(),
+    userId: Type.Number(),
+    createdAt: Type.Number(),
+    updatedAt: Type.Number()
+  },
+  { $id: 'Message', additionalProperties: false }
+)
+
+export type Message = Static<typeof messageSchema>
+
+export const messageDataSchema = Type.Pick(messageSchema, ['text', 'userId'])
+export type MessageData = Static<typeof messageDataSchema>
+```
+
+```typescript src/services/messages/messages.service.ts
+import { memory } from '@feathersjs/memory'
+import type { Application } from '../../declarations'
+
+export const messagePath = 'messages'
+
+export const messageMethods = ['find', 'get', 'create', 'patch', 'remove'] as const
+
+export class MessageService extends memory({
+  id: 'id',
+  startId: 1,
+  paginate: {
+    default: 25,
+    max: 100
+  }
+}) {}
+
+export const messages = (app: Application) => {
+  // Register the service
+  app.use(messagePath, new MessageService(), {
+    methods: messageMethods
+  })
+
+  // Add hooks
+  app.service(messagePath).hooks({
+    before: {
+      create: [
+        async (context) => {
+          // Add timestamp
+          context.data.createdAt = Date.now()
+          context.data.updatedAt = Date.now()
+
+          // Set user ID from authenticated user
+          if (context.params.user) {
+            context.data.userId = context.params.user.id
+          }
+        }
+      ],
+      all: [
+        async (context) => {
+          // Log all method calls
+          console.log(`${context.method} on ${context.path}`)
+        }
+      ]
+    },
+    after: {
+      create: [
+        async (context) => {
+          // Populate user information
+          const user = await app.service('users').get(context.result.userId)
+          context.result.user = user
+        }
+      ]
+    }
+  })
+
+  // Publish events to authenticated users only
+  app.service(messagePath).publish('created', (data, context) => {
+    return app.channel('authenticated')
+  })
+}
+```
+
+### 4. Set Up Authentication
+
+Add JWT authentication:
+
+```typescript src/authentication.ts
+import { AuthenticationService } from '@feathersjs/authentication'
+import { LocalStrategy } from '@feathersjs/authentication-local'
+import { JWTStrategy } from '@feathersjs/authentication'
+import type { Application } from './declarations'
+
+export const authentication = (app: Application) => {
+  const authService = new AuthenticationService(app)
+
+  // Register strategies
+  authService.register('jwt', new JWTStrategy())
+  authService.register('local', new LocalStrategy())
+
+  // Register the service
+  app.use('authentication', authService)
+}
+```
+
+The authentication service from the source:
+
+```typescript packages/authentication/src/service.ts
+export class AuthenticationService
+  extends AuthenticationBase
+  implements Partial<ServiceMethods<AuthenticationResult, AuthenticationRequest>>
+{
+  constructor(app: any, configKey = 'authentication', options = {}) {
+    super(app, configKey, options)
+
+    hooks(this, {
+      create: [resolveDispatch(), event('login'), connection('login')],
+      remove: [resolveDispatch(), event('logout'), connection('logout')]
+    })
+
+    this.app.on('disconnect', async (connection: RealTimeConnection) => {
+      await this.handleConnection('disconnect', connection)
+    })
+  }
+
+  async create(data: AuthenticationRequest, params?: AuthenticationParams) {
+    const authStrategies = params.authStrategies || this.configuration.authStrategies
+
+    const authResult = await this.authenticate(data, params, ...authStrategies)
+
+    if (authResult.accessToken) {
+      return authResult
+    }
+
+    const [payload, jwtOptions] = await Promise.all([
+      this.getPayload(authResult, params),
+      this.getTokenOptions(authResult, params)
+    ])
+
+    const accessToken = await this.createAccessToken(payload, jwtOptions, params.secret)
+
+    return {
+      accessToken,
+      ...authResult
+    }
+  }
+}
+```
+
+### 5. Wire Everything Together
+
+Update your main app file:
+
+```typescript src/app.ts
+import { feathers } from '@feathersjs/feathers'
+import express, {
+  rest,
+  json,
+  urlencoded,
+  cors,
+  compression,
+  errorHandler,
+  notFound
+} from '@feathersjs/express'
+import socketio from '@feathersjs/socketio'
+import { authentication } from './authentication'
+import { users } from './services/users/users.service'
+import { messages } from './services/messages/messages.service'
+
+// Create the Feathers app
+const app = express(feathers())
+
+// Configure middleware
+app.use(cors())
+app.use(compression())
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Configure transports
+app.configure(rest())
+app.configure(socketio({
+  cors: {
+    origin: '*'
+  }
+}))
+
+// Configure authentication
+app.set('authentication', {
+  secret: 'your-secret-key',
+  authStrategies: ['jwt', 'local'],
+  jwtOptions: {
+    header: { typ: 'access' },
+    audience: 'https://yourdomain.com',
+    issuer: 'feathers',
+    algorithm: 'HS256',
+    expiresIn: '1d'
+  },
+  local: {
+    usernameField: 'email',
+    passwordField: 'password'
+  },
+  entity: 'user',
+  service: 'users',
+  entityId: 'id'
+})
+
+app.configure(authentication)
+
+// Configure services
+app.configure(users)
+app.configure(messages)
+
+// Error handling
+app.use(notFound())
+app.use(errorHandler())
+
+export { app }
+```
+
+```typescript src/index.ts
+import { app } from './app'
+
+const port = 3030
+
+app.listen(port).then(() => {
+  console.log(`Feathers app listening on http://localhost:${port}`)
+})
+```
+
+### 6. Test the Application
+
+Start your server:
+
+```bash
+npm run dev
+```
+
+Test the API:
+
+<CodeGroup>
+
+```bash Create a user
+curl -X POST http://localhost:3030/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "password123"
+  }'
+```
+
+```bash Authenticate
+curl -X POST http://localhost:3030/authentication \
+  -H "Content-Type: application/json" \
+  -d '{
+    "strategy": "local",
+    "email": "test@example.com",
+    "password": "password123"
+  }'
+```
+
+```bash Create a message
+curl -X POST http://localhost:3030/messages \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -d '{
+    "text": "Hello, Feathers!"
+  }'
+```
+
+```bash Get messages
+curl http://localhost:3030/messages \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+```
+
+</CodeGroup>
+
+## Real-time Client
+
+Create a simple HTML client to test real-time features:
+
+```html public/index.html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Feathers Chat</title>
+  <script src="//unpkg.com/@feathersjs/client@^5.0.0/dist/feathers.js"></script>
+  <script src="//unpkg.com/socket.io-client@^4.0.0/dist/socket.io.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <h1>Feathers Chat</h1>
+    <div id="login">
+      <input id="email" type="email" placeholder="Email">
+      <input id="password" type="password" placeholder="Password">
+      <button onclick="login()">Login</button>
+      <button onclick="signup()">Sign Up</button>
+    </div>
+    <div id="chat" style="display: none;">
+      <div id="messages"></div>
+      <input id="message-text" placeholder="Type a message">
+      <button onclick="sendMessage()">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const socket = io('http://localhost:3030')
+    const app = feathers()
+
+    app.configure(feathers.socketio(socket))
+    app.configure(feathers.authentication())
+
+    const messagesDiv = document.getElementById('messages')
+
+    // Listen for new messages
+    app.service('messages').on('created', (message) => {
+      addMessage(message)
+    })
+
+    async function signup() {
+      const email = document.getElementById('email').value
+      const password = document.getElementById('password').value
+
+      try {
+        await app.service('users').create({ email, password })
+        await login()
+      } catch (error) {
+        console.error('Signup error:', error)
+      }
+    }
+
+    async function login() {
+      const email = document.getElementById('email').value
+      const password = document.getElementById('password').value
+
+      try {
+        await app.authenticate({
+          strategy: 'local',
+          email,
+          password
+        })
+
+        document.getElementById('login').style.display = 'none'
+        document.getElementById('chat').style.display = 'block'
+
+        // Load existing messages
+        const result = await app.service('messages').find({
+          query: { $sort: { createdAt: -1 }, $limit: 25 }
+        })
+
+        result.data.reverse().forEach(addMessage)
+      } catch (error) {
+        console.error('Login error:', error)
+      }
+    }
+
+    async function sendMessage() {
+      const text = document.getElementById('message-text').value
+
+      if (text.trim()) {
+        await app.service('messages').create({ text })
+        document.getElementById('message-text').value = ''
+      }
+    }
+
+    function addMessage(message) {
+      const div = document.createElement('div')
+      div.textContent = `${message.user?.email || 'Unknown'}: ${message.text}`
+      messagesDiv.appendChild(div)
+    }
+  </script>
+</body>
+</html>
+```
+
+## Advanced Features
+
+### Custom Hooks
+
+Create reusable hooks for common tasks:
+
+```typescript src/hooks/log.ts
+import { HookContext } from '@feathersjs/feathers'
+
+export const logRuntime = () => async (context: HookContext, next: () => Promise<void>) => {
+  const start = Date.now()
+  await next()
+  const duration = Date.now() - start
+  console.log(`${context.method} on ${context.path} took ${duration}ms`)
+}
+
+// Use it
+app.service('messages').hooks({
+  around: {
+    all: [logRuntime()]
+  }
+})
+```
+
+### Schema Validation
+
+Use TypeBox schemas for validation:
+
+```typescript src/services/messages/messages.hooks.ts
+import { resolve, validateData } from '@feathersjs/schema'
+import { messageDataSchema } from './messages.schema'
+
+export const messageDataResolver = resolve<Message, HookContext>({
+  properties: {
+    userId: async (_value, _message, context) => {
+      return context.params.user?.id
+    },
+    createdAt: async () => Date.now(),
+    updatedAt: async () => Date.now()
+  }
+})
+
+app.service('messages').hooks({
+  before: {
+    create: [
+      validateData(messageDataSchema),
+      messageDataResolver
+    ]
+  }
+})
+```
+
+## What You've Learned
+
+<AccordionGroup>
+  <Accordion title="Services" icon="database">
+    Services are the core abstraction in Feathers. They handle data operations and automatically expose REST and real-time APIs.
+  </Accordion>
+  
+  <Accordion title="Hooks" icon="link">
+    Hooks are middleware that run before, after, or around service methods. They're perfect for validation, authorization, and data transformation.
+  </Accordion>
+  
+  <Accordion title="Authentication" icon="lock">
+    Feathers provides a flexible authentication system with JWT tokens and multiple strategies.
+  </Accordion>
+  
+  <Accordion title="Real-time" icon="bolt">
+    Socket.io integration gives you real-time capabilities out of the box. Events are automatically sent when data changes.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add a Database" icon="database" href="#">
+    Replace the memory adapter with MongoDB or PostgreSQL
+  </Card>
+  <Card title="File Uploads" icon="upload" href="#">
+    Handle file uploads with multipart/form-data
+  </Card>
+  <Card title="Email Verification" icon="envelope" href="#">
+    Add email verification for new users
+  </Card>
+  <Card title="Deploy" icon="rocket" href="#">
+    Deploy your app to production
+  </Card>
+</CardGroup>
+
+<Tip>
+  The complete source code for this tutorial is available in the [Feathers repository](https://github.com/feathersjs/feathers). Check out the test files for more examples!
+</Tip>

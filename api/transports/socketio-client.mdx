@@ -1,0 +1,490 @@
+---
+title: Socket.io Client
+description: API reference for @feathersjs/socketio-client providing real-time Socket.io connections for Feathers clients
+---
+
+# Socket.io Client
+
+The `@feathersjs/socketio-client` module provides real-time connectivity for Feathers client applications using Socket.io.
+
+## Installation
+
+```bash
+npm install @feathersjs/socketio-client socket.io-client
+```
+
+## socketioClient()
+
+Configures a Feathers client to use Socket.io for real-time communication.
+
+### Signature
+
+```typescript
+function socketioClient<Services = any>(
+  connection: Socket,
+  options?: any
+): TransportConnection<Services>
+```
+
+<ParamField path="connection" type="Socket" required>
+  Socket.io client connection instance from `socket.io-client`
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  Additional configuration options
+</ParamField>
+
+### Returns
+
+<ResponseField name="TransportConnection" type="TransportConnection<Services>">
+  A transport connection that can be passed to `app.configure()`
+</ResponseField>
+
+### Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio-client'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030')
+const app = feathers()
+
+app.configure(socketio(socket))
+
+// Use services
+const messages = app.service('messages')
+const message = await messages.create({ text: 'Hello!' })
+```
+
+## Connection Options
+
+Socket.io connection options are passed when creating the socket:
+
+```typescript
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030', {
+  transports: ['websocket'],
+  reconnection: true,
+  reconnectionDelay: 1000,
+  reconnectionAttempts: 10,
+  timeout: 20000,
+  auth: {
+    token: 'authentication-token'
+  }
+})
+```
+
+<ParamField path="transports" type="string[]" optional default="['polling', 'websocket']">
+  Transport methods to use (e.g., `['websocket']` for WebSocket only)
+</ParamField>
+
+<ParamField path="reconnection" type="boolean" optional default="true">
+  Whether to automatically reconnect
+</ParamField>
+
+<ParamField path="reconnectionDelay" type="number" optional default="1000">
+  Delay before reconnection attempt in milliseconds
+</ParamField>
+
+<ParamField path="reconnectionAttempts" type="number" optional default="Infinity">
+  Maximum number of reconnection attempts
+</ParamField>
+
+<ParamField path="timeout" type="number" optional default="20000">
+  Connection timeout in milliseconds
+</ParamField>
+
+<ParamField path="auth" type="object" optional>
+  Authentication data sent with the connection handshake
+</ParamField>
+
+## Service Methods
+
+Socket.io client services implement all standard Feathers service methods with real-time support:
+
+### find()
+
+```typescript
+const messages = app.service('messages')
+const result = await messages.find({
+  query: {
+    $limit: 10,
+    read: false
+  }
+})
+```
+
+### get()
+
+```typescript
+const message = await messages.get(123)
+```
+
+### create()
+
+```typescript
+const newMessage = await messages.create({
+  text: 'Hello world!',
+  userId: 1
+})
+```
+
+### update()
+
+```typescript
+const updated = await messages.update(123, {
+  text: 'Updated text',
+  userId: 1
+})
+```
+
+### patch()
+
+```typescript
+const patched = await messages.patch(123, {
+  read: true
+})
+```
+
+### remove()
+
+```typescript
+const removed = await messages.remove(123)
+```
+
+## Real-Time Events
+
+Socket.io clients automatically receive real-time service events:
+
+### Event Listeners
+
+```typescript
+const messages = app.service('messages')
+
+// Listen for created events
+messages.on('created', (message) => {
+  console.log('New message created:', message)
+})
+
+// Listen for updated events
+messages.on('updated', (message) => {
+  console.log('Message updated:', message)
+})
+
+// Listen for patched events
+messages.on('patched', (message) => {
+  console.log('Message patched:', message)
+})
+
+// Listen for removed events
+messages.on('removed', (message) => {
+  console.log('Message removed:', message)
+})
+```
+
+### Remove Event Listeners
+
+```typescript
+const handler = (message) => {
+  console.log('Message created:', message)
+}
+
+messages.on('created', handler)
+
+// Remove specific listener
+messages.removeListener('created', handler)
+
+// Remove all listeners for an event
+messages.removeAllListeners('created')
+
+// Remove all listeners for all events
+messages.removeAllListeners()
+```
+
+## Custom Methods
+
+Register and use custom service methods:
+
+```typescript
+app.use('/messages', messageService, {
+  methods: ['find', 'get', 'create', 'archive']
+})
+
+const messages = app.service('messages')
+
+// Call custom method
+await messages.archive({ messageId: 123 })
+```
+
+## Authentication
+
+Integrate with Feathers authentication:
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio-client'
+import auth from '@feathersjs/authentication-client'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030')
+const app = feathers()
+
+app.configure(socketio(socket))
+app.configure(auth())
+
+// Authenticate
+await app.authenticate({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'password'
+})
+
+// Socket connection is now authenticated
+const messages = await app.service('messages').find()
+```
+
+### Re-authentication on Reconnect
+
+```typescript
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030')
+
+socket.on('connect', async () => {
+  console.log('Connected')
+  
+  // Re-authenticate after reconnection
+  try {
+    await app.reAuthenticate()
+    console.log('Re-authenticated successfully')
+  } catch (error) {
+    console.error('Re-authentication failed:', error)
+  }
+})
+
+socket.on('disconnect', () => {
+  console.log('Disconnected')
+})
+```
+
+## Connection Events
+
+Listen to Socket.io connection events:
+
+```typescript
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030')
+
+socket.on('connect', () => {
+  console.log('Connected to server')
+})
+
+socket.on('disconnect', (reason) => {
+  console.log('Disconnected:', reason)
+})
+
+socket.on('connect_error', (error) => {
+  console.error('Connection error:', error)
+})
+
+socket.on('reconnect', (attemptNumber) => {
+  console.log('Reconnected after', attemptNumber, 'attempts')
+})
+
+socket.on('reconnect_attempt', (attemptNumber) => {
+  console.log('Reconnection attempt:', attemptNumber)
+})
+
+socket.on('reconnect_error', (error) => {
+  console.error('Reconnection error:', error)
+})
+
+socket.on('reconnect_failed', () => {
+  console.error('Reconnection failed')
+})
+```
+
+## Application Extensions
+
+The Socket.io client extends the application with:
+
+<ResponseField name="app.io" type="Socket">
+  The Socket.io client instance for direct access
+</ResponseField>
+
+### Example
+
+```typescript
+const app = feathers()
+app.configure(socketio(socket))
+
+// Access socket directly
+app.io.on('custom-event', (data) => {
+  console.log('Custom event:', data)
+})
+
+app.io.emit('my-event', { foo: 'bar' })
+```
+
+## Error Handling
+
+Handle errors from service calls:
+
+```typescript
+try {
+  const message = await messages.get(999)
+} catch (error) {
+  console.log(error.name)     // 'NotFound'
+  console.log(error.code)     // 404
+  console.log(error.message)  // 'Not Found'
+  console.log(error.data)     // Additional error data
+}
+```
+
+## Params
+
+Socket.io client params:
+
+<ParamField path="query" type="object" optional>
+  Query parameters for the service method
+</ParamField>
+
+<ParamField path="headers" type="object" optional>
+  Custom headers (available in service hooks on server)
+</ParamField>
+
+### Example
+
+```typescript
+const messages = await app.service('messages').find({
+  query: {
+    $limit: 10,
+    userId: 123
+  },
+  headers: {
+    'X-Custom-Header': 'value'
+  }
+})
+```
+
+## Complete Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio-client'
+import auth from '@feathersjs/authentication-client'
+import io from 'socket.io-client'
+
+// Create socket connection
+const socket = io('http://localhost:3030', {
+  transports: ['websocket'],
+  reconnection: true
+})
+
+// Create client app
+const app = feathers()
+
+// Configure Socket.io transport
+app.configure(socketio(socket))
+
+// Configure authentication
+app.configure(auth({
+  storageKey: 'feathers-jwt'
+}))
+
+// Connection events
+socket.on('connect', () => {
+  console.log('Connected to server')
+})
+
+socket.on('disconnect', () => {
+  console.log('Disconnected from server')
+})
+
+// Get service
+const messages = app.service('messages')
+
+// Listen for real-time events
+messages.on('created', (message) => {
+  console.log('New message:', message)
+})
+
+messages.on('removed', (message) => {
+  console.log('Message removed:', message)
+})
+
+// Authenticate and use services
+async function run() {
+  try {
+    // Authenticate
+    await app.authenticate({
+      strategy: 'local',
+      email: 'user@example.com',
+      password: 'password'
+    })
+    
+    console.log('Authenticated successfully')
+    
+    // Create a message (will trigger 'created' event)
+    const message = await messages.create({
+      text: 'Hello from Socket.io client!'
+    })
+    
+    console.log('Created message:', message)
+    
+    // Find all messages
+    const result = await messages.find({
+      query: { $limit: 10 }
+    })
+    
+    console.log('Found messages:', result.data)
+  } catch (error) {
+    console.error('Error:', error)
+  }
+}
+
+run()
+```
+
+## Browser Usage
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <script src="//unpkg.com/@feathersjs/client@^5.0.0/dist/feathers.js"></script>
+</head>
+<body>
+  <script>
+    const socket = io('http://localhost:3030')
+    const app = feathers()
+    
+    app.configure(feathers.socketio(socket))
+    app.configure(feathers.authentication())
+    
+    const messages = app.service('messages')
+    
+    messages.on('created', message => {
+      console.log('New message:', message)
+    })
+    
+    async function init() {
+      await app.authenticate({
+        strategy: 'local',
+        email: 'user@example.com',
+        password: 'password'
+      })
+      
+      const result = await messages.find()
+      console.log('Messages:', result)
+    }
+    
+    init()
+  </script>
+</body>
+</html>
+```

@@ -1,0 +1,496 @@
+---
+title: Service API
+description: Complete API reference for Feathers services
+---
+
+Services are the heart of every Feathers application. A service is an object or class instance that implements certain methods. Services provide a uniform, protocol-independent interface for reading and writing data.
+
+## Service Interface
+
+A service can implement any combination of the following methods:
+
+```typescript
+interface ServiceMethods<Result = any, Data = Partial<Result>, ServiceParams = Params> {
+  find(params?: ServiceParams & { paginate?: PaginationParams }): Promise<Result | Result[]>
+  get(id: Id, params?: ServiceParams): Promise<Result>
+  create(data: Data, params?: ServiceParams): Promise<Result>
+  update(id: NullableId, data: Data, params?: ServiceParams): Promise<Result | Result[]>
+  patch(id: NullableId, data: PatchData, params?: ServiceParams): Promise<Result | Result[]>
+  remove(id: NullableId, params?: ServiceParams): Promise<Result | Result[]>
+  setup?(app: Application, path: string): Promise<void>
+  teardown?(app: Application, path: string): Promise<void>
+}
+```
+
+## Standard Methods
+
+### find()
+
+Retrieve a list of resources. Can return paginated or unpaginated results.
+
+```typescript
+find(params?: ServiceParams & { paginate?: PaginationParams }): Promise<Result | Result[]>
+```
+
+<ParamField path="params" type="Params" optional>
+  Service call parameters
+</ParamField>
+
+<ParamField path="params.query" type="Query" optional>
+  Query parameters for filtering, sorting, and pagination
+</ParamField>
+
+<ParamField path="params.paginate" type="PaginationParams" optional>
+  Pagination configuration. Set to `false` to disable pagination.
+</ParamField>
+
+<ResponseField name="result" type="Result[] | Paginated<Result>">
+  Array of results, or a paginated result object with `total`, `limit`, `skip`, and `data` properties
+</ResponseField>
+
+```typescript
+// Find all users
+const users = await app.service('users').find()
+
+// Find with query
+const activeUsers = await app.service('users').find({
+  query: {
+    active: true,
+    $limit: 10,
+    $skip: 0
+  }
+})
+
+// Paginated result
+const result = await app.service('users').find({
+  query: { $limit: 10 }
+})
+console.log(result.total) // Total number of records
+console.log(result.data)  // Array of 10 users
+```
+
+### get()
+
+Retrieve a single resource by its unique identifier.
+
+```typescript
+get(id: Id, params?: ServiceParams): Promise<Result>
+```
+
+<ParamField path="id" type="Id" required>
+  The unique identifier of the resource (number or string)
+</ParamField>
+
+<ParamField path="params" type="Params" optional>
+  Service call parameters
+</ParamField>
+
+<ResponseField name="result" type="Result">
+  The resource object
+</ResponseField>
+
+```typescript
+// Get user by ID
+const user = await app.service('users').get(1)
+
+// Get with additional params
+const user = await app.service('users').get(1, {
+  query: { $select: ['name', 'email'] }
+})
+```
+
+### create()
+
+Create one or more new resources.
+
+```typescript
+create(data: Data, params?: ServiceParams): Promise<Result>
+create(data: Data[], params?: ServiceParams): Promise<Result[]>
+```
+
+<ParamField path="data" type="Data | Data[]" required>
+  The data for the new resource(s). Can be a single object or an array of objects.
+</ParamField>
+
+<ParamField path="params" type="Params" optional>
+  Service call parameters
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The created resource(s)
+</ResponseField>
+
+```typescript
+// Create a single user
+const user = await app.service('users').create({
+  name: 'John Doe',
+  email: 'john@example.com'
+})
+
+// Create multiple users
+const users = await app.service('users').create([
+  { name: 'John Doe', email: 'john@example.com' },
+  { name: 'Jane Smith', email: 'jane@example.com' }
+])
+```
+
+### update()
+
+Replace a resource or multiple resources. The `update` method completely replaces the resource(s).
+
+```typescript
+update(id: Id, data: Data, params?: ServiceParams): Promise<Result>
+update(id: null, data: Data, params?: ServiceParams): Promise<Result[]>
+```
+
+<ParamField path="id" type="Id | null" required>
+  The unique identifier of the resource. Use `null` to update multiple resources.
+</ParamField>
+
+<ParamField path="data" type="Data" required>
+  The complete new data for the resource(s)
+</ParamField>
+
+<ParamField path="params" type="Params" optional>
+  Service call parameters
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The updated resource(s)
+</ResponseField>
+
+```typescript
+// Update a single user (replaces entire object)
+const user = await app.service('users').update(1, {
+  name: 'John Updated',
+  email: 'john.updated@example.com',
+  active: true
+})
+
+// Update multiple users
+const users = await app.service('users').update(null, 
+  { active: false },
+  { query: { verified: false } }
+)
+```
+
+### patch()
+
+Merge updates into a resource or multiple resources. Unlike `update`, `patch` only modifies the provided fields.
+
+```typescript
+patch(id: Id, data: PatchData, params?: ServiceParams): Promise<Result>
+patch(id: null, data: PatchData, params?: ServiceParams): Promise<Result[]>
+```
+
+<ParamField path="id" type="Id | null" required>
+  The unique identifier of the resource. Use `null` to patch multiple resources.
+</ParamField>
+
+<ParamField path="data" type="PatchData" required>
+  Partial data to merge into the resource(s)
+</ParamField>
+
+<ParamField path="params" type="Params" optional>
+  Service call parameters
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The patched resource(s)
+</ResponseField>
+
+```typescript
+// Patch a single user (only updates provided fields)
+const user = await app.service('users').patch(1, {
+  active: true
+})
+
+// Patch multiple users
+const users = await app.service('users').patch(null, 
+  { verified: true },
+  { query: { email: { $like: '%@example.com' } } }
+)
+```
+
+### remove()
+
+Remove a resource or multiple resources.
+
+```typescript
+remove(id: Id, params?: ServiceParams): Promise<Result>
+remove(id: null, params?: ServiceParams): Promise<Result[]>
+```
+
+<ParamField path="id" type="Id | null" required>
+  The unique identifier of the resource. Use `null` to remove multiple resources.
+</ParamField>
+
+<ParamField path="params" type="Params" optional>
+  Service call parameters
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The removed resource(s)
+</ResponseField>
+
+```typescript
+// Remove a single user
+const removedUser = await app.service('users').remove(1)
+
+// Remove multiple users
+const removedUsers = await app.service('users').remove(null, {
+  query: { active: false }
+})
+```
+
+## Lifecycle Methods
+
+### setup()
+
+Called when the application is started. Use this to initialize connections, load data, etc.
+
+```typescript
+setup?(app: Application, path: string): Promise<void>
+```
+
+<ParamField path="app" type="Application" required>
+  The Feathers application instance
+</ParamField>
+
+<ParamField path="path" type="string" required>
+  The path where this service is registered
+</ParamField>
+
+```typescript
+class MyService {
+  async setup(app, path) {
+    console.log(`Setting up service at ${path}`)
+    // Initialize database connection, load cache, etc.
+  }
+  
+  async find(params) {
+    return []
+  }
+}
+```
+
+### teardown()
+
+Called when the application is shut down. Use this to close connections, clean up resources, etc.
+
+```typescript
+teardown?(app: Application, path: string): Promise<void>
+```
+
+<ParamField path="app" type="Application" required>
+  The Feathers application instance
+</ParamField>
+
+<ParamField path="path" type="string" required>
+  The path where this service is registered
+</ParamField>
+
+```typescript
+class MyService {
+  async teardown(app, path) {
+    console.log(`Tearing down service at ${path}`)
+    // Close database connection, flush cache, etc.
+  }
+  
+  async find(params) {
+    return []
+  }
+}
+```
+
+## Service Parameters
+
+### Params
+
+The `params` object contains metadata about the service call:
+
+```typescript
+interface Params<Q = Query> {
+  query?: Q
+  provider?: string
+  route?: { [key: string]: any }
+  headers?: { [key: string]: any }
+  // ... custom properties
+}
+```
+
+<ParamField path="query" type="Query" optional>
+  Query parameters for filtering and pagination
+</ParamField>
+
+<ParamField path="provider" type="string" optional>
+  The transport that made the service call (e.g., `'rest'`, `'socketio'`, `undefined` for internal calls)
+</ParamField>
+
+<ParamField path="route" type="object" optional>
+  Route parameters from the URL path
+</ParamField>
+
+<ParamField path="headers" type="object" optional>
+  HTTP headers from the request
+</ParamField>
+
+```typescript
+class UserService {
+  async find(params) {
+    const { query, provider, user } = params
+    
+    // Internal call (no provider)
+    if (!provider) {
+      // Return all users
+    }
+    
+    // External call
+    // Apply security restrictions
+  }
+}
+```
+
+## Service Options
+
+When registering a service, you can pass options:
+
+```typescript
+interface ServiceOptions {
+  events?: string[]
+  methods?: string[]
+  serviceEvents?: string[]
+  routeParams?: { [key: string]: any }
+}
+```
+
+<ParamField path="events" type="string[]" optional>
+  Custom events that this service emits to clients (merged with default events)
+</ParamField>
+
+<ParamField path="methods" type="string[]" optional>
+  Service methods that should be available externally to clients
+</ParamField>
+
+<ParamField path="serviceEvents" type="string[]" optional>
+  Full list of events this service emits (replaces default events)
+</ParamField>
+
+<ParamField path="routeParams" type="object" optional>
+  Initial data to always add as route params to this service
+</ParamField>
+
+```typescript
+app.use('/messages', messageService, {
+  methods: ['find', 'get', 'create'],
+  events: ['typing', 'delivered'],
+  routeParams: {
+    appId: 'my-app'
+  }
+})
+```
+
+## Custom Service Methods
+
+Services can have custom methods in addition to the standard CRUD methods:
+
+```typescript
+class UserService {
+  async find(params) {
+    return []
+  }
+  
+  async resetPassword(data, params) {
+    const { email } = data
+    // Send password reset email
+    return { message: 'Password reset email sent' }
+  }
+}
+
+app.use('/users', new UserService(), {
+  methods: ['find', 'resetPassword']
+})
+
+// Call custom method
+await app.service('users').resetPassword({ email: 'user@example.com' })
+```
+
+## Protected Method Names
+
+The following method names are reserved and cannot be used as custom methods:
+
+- All methods from `Object.prototype` and `EventEmitter.prototype`
+- `all`, `around`, `before`, `after`, `error`
+- `hooks`, `setup`, `teardown`, `publish`
+
+## Example Service
+
+```typescript
+import { Id, Params } from '@feathersjs/feathers'
+
+interface User {
+  id: Id
+  name: string
+  email: string
+  active: boolean
+}
+
+class UserService {
+  private users: User[] = []
+  private currentId = 0
+  
+  async setup(app, path) {
+    console.log(`UserService registered at ${path}`)
+  }
+  
+  async find(params?: Params) {
+    const { query = {} } = params || {}
+    let result = this.users
+    
+    if (query.active !== undefined) {
+      result = result.filter(u => u.active === query.active)
+    }
+    
+    return result
+  }
+  
+  async get(id: Id, params?: Params) {
+    const user = this.users.find(u => u.id === id)
+    if (!user) {
+      throw new Error(`User ${id} not found`)
+    }
+    return user
+  }
+  
+  async create(data: Partial<User>, params?: Params) {
+    const user: User = {
+      id: ++this.currentId,
+      name: data.name!,
+      email: data.email!,
+      active: data.active ?? true
+    }
+    this.users.push(user)
+    return user
+  }
+  
+  async patch(id: Id, data: Partial<User>, params?: Params) {
+    const user = await this.get(id)
+    Object.assign(user, data)
+    return user
+  }
+  
+  async remove(id: Id, params?: Params) {
+    const index = this.users.findIndex(u => u.id === id)
+    if (index === -1) {
+      throw new Error(`User ${id} not found`)
+    }
+    return this.users.splice(index, 1)[0]
+  }
+  
+  async teardown(app, path) {
+    console.log(`UserService at ${path} shutting down`)
+  }
+}
+
+app.use('/users', new UserService())
+```

@@ -1,0 +1,113 @@
+---
+title: 'feathers generate'
+description: 'Run code generators to scaffold Feathers applications, services, hooks, and more'
+---
+
+## Overview
+
+The `feathers generate` command (alias: `feathers g`) is the main entry point for running Feathers code generators. It provides an interactive CLI for scaffolding various parts of your Feathers application.
+
+## Usage
+
+```bash
+feathers generate <generator>
+```
+
+Or using the shorthand:
+
+```bash
+feathers g <generator>
+```
+
+## Available Generators
+
+The following generators are available:
+
+<CardGroup cols={2}>
+  <Card title="app" icon="cube" href="/cli/commands/app">
+    Generate a new Feathers application
+  </Card>
+  <Card title="service" icon="server" href="/cli/commands/service">
+    Generate a new service with database adapter
+  </Card>
+  <Card title="hook" icon="code" href="/cli/commands/hook">
+    Generate a hook for custom logic
+  </Card>
+  <Card title="connection" icon="database">
+    Add a new database connection
+  </Card>
+  <Card title="authentication" icon="lock">
+    Add authentication to your application
+  </Card>
+</CardGroup>
+
+## Examples
+
+### Generate a new application
+
+```bash
+feathers generate app
+```
+
+This launches an interactive prompt that guides you through creating a new Feathers application with your preferred configuration.
+
+### Generate a service
+
+```bash
+feathers generate service
+```
+
+Creates a new service with database integration, schema validation, and test files.
+
+### Generate with alias
+
+```bash
+feathers g hook
+```
+
+The `g` alias provides a shorter command for frequent use.
+
+## Interactive Mode
+
+All generators run in interactive mode by default, prompting you for configuration options. You can also pass options via flags to skip prompts (see individual generator documentation).
+
+## Terminal Output Example
+
+```bash
+$ feathers generate service
+? What is the name of your service? messages
+? Which path should the service be registered on? messages
+? Does this service require authentication? Yes
+? What database is the service using? MongoDB
+? Which schema definition format do you want to use? TypeBox (recommended)
+
+Generating service...
+✓ Created src/services/messages/messages.schema.ts
+✓ Created src/services/messages/messages.ts
+✓ Created src/services/messages/messages.class.ts
+✓ Updated src/services/index.ts
+✓ Created test/services/messages.test.ts
+```
+
+<Note>
+  The CLI validates your inputs and provides helpful error messages if something goes wrong.
+</Note>
+
+## Common Options
+
+While each generator has specific options, some patterns are common across generators:
+
+- Most generators support a `--name` flag to set the name non-interactively
+- Language (TypeScript/JavaScript) is inherited from your app configuration
+- All generators respect your project's prettier and formatting settings
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Generate an app" icon="rocket" href="/cli/commands/app">
+    Learn about creating a new Feathers application
+  </Card>
+  <Card title="Generate a service" icon="server" href="/cli/commands/service">
+    Add services to handle your data
+  </Card>
+</CardGroup>

@@ -1,0 +1,364 @@
+---
+title: Authentication Overview
+description: Comprehensive guide to Feathers authentication system architecture, JWT tokens, and authentication strategies
+---
+
+Feathers authentication provides a flexible, secure system for managing user authentication in your application. It supports multiple authentication strategies including JWT, local username/password, and OAuth providers.
+
+## Core Architecture
+
+The authentication system is built around the `AuthenticationService` which manages:
+
+- **Authentication strategies** - Pluggable methods for authenticating users (JWT, local, OAuth)
+- **JWT token management** - Creating and verifying access tokens
+- **Real-time connection handling** - Managing authenticated WebSocket connections
+- **HTTP request parsing** - Extracting authentication from HTTP headers
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @feathersjs/authentication --save
+```
+
+```bash yarn
+yarn add @feathersjs/authentication
+```
+
+```bash pnpm
+pnpm add @feathersjs/authentication
+```
+</CodeGroup>
+
+## Basic Setup
+
+<Steps>
+  <Step title="Configure Authentication">
+    Set up authentication in your application configuration:
+
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "secret": "your-secret-key",
+        "entity": "user",
+        "service": "users",
+        "authStrategies": ["jwt", "local"],
+        "jwtOptions": {
+          "header": { "typ": "access" },
+          "audience": "https://yourdomain.com",
+          "issuer": "feathers",
+          "algorithm": "HS256",
+          "expiresIn": "1d"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Create Authentication Service">
+    Register the authentication service in your application:
+
+    ```typescript
+    import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+
+    // Configure authentication service
+    const authentication = new AuthenticationService(app)
+
+    // Register JWT strategy
+    authentication.register('jwt', new JWTStrategy())
+
+    // Register the service
+    app.use('/authentication', authentication)
+    ```
+  </Step>
+
+  <Step title="Protect Routes">
+    Use the `authenticate` hook to protect your services:
+
+    ```typescript
+    import { authenticate } from '@feathersjs/authentication'
+
+    app.service('messages').hooks({
+      before: {
+        all: [authenticate('jwt')],
+        create: [authenticate('jwt')]
+      }
+    })
+    ```
+  </Step>
+</Steps>
+
+## Configuration Options
+
+The authentication service accepts the following configuration options:
+
+### Required Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `secret` | `string` | The JWT signing secret (keep this secure!) |
+| `entity` | `string \| null` | The name of the authentication entity (e.g., 'user') |
+| `authStrategies` | `string[]` | Array of strategy names allowed to create JWT tokens |
+
+### Optional Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `service` | `string` | - | The path of the entity service (e.g., 'users') |
+| `entityId` | `string` | - | The name of the entity id property |
+| `jwtOptions` | `object` | See below | Options for JWT token creation |
+| `parseStrategies` | `string[]` | `authStrategies` | Strategies that parse HTTP headers |
+
+### JWT Options
+
+```typescript
+jwtOptions: {
+  header: { typ: 'access' },      // JWT header type
+  audience: 'https://yourdomain.com', // Token audience
+  issuer: 'feathers',             // Token issuer
+  algorithm: 'HS256',             // Signing algorithm
+  expiresIn: '1d'                 // Token expiration
+}
+```
+
+**Supported algorithms**: HS256, HS384, HS512, RS256, RS384, RS512, ES256, ES384, ES512
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Client Login Request">
+    Client sends credentials to the authentication service:
+
+    ```typescript
+    const response = await app.service('authentication').create({
+      strategy: 'local',
+      email: 'user@example.com',
+      password: 'password123'
+    })
+    ```
+  </Step>
+
+  <Step title="Strategy Validation">
+    The authentication service:
+    1. Validates the strategy is allowed (in `authStrategies`)
+    2. Calls the strategy's `authenticate()` method
+    3. Strategy validates credentials and returns user entity
+  </Step>
+
+  <Step title="JWT Creation">
+    The service creates a JWT access token:
+    - Calls `getPayload()` to build token payload
+    - Calls `getTokenOptions()` to set token options (subject, expiration)
+    - Signs the token with the configured secret
+  </Step>
+
+  <Step title="Return Authentication Result">
+    Returns the authentication result:
+
+    ```typescript
+    {
+      accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+      authentication: {
+        strategy: 'local',
+        payload: { sub: '123', iat: 1234567890, exp: 1234654290 }
+      },
+      user: { id: '123', email: 'user@example.com' }
+    }
+    ```
+  </Step>
+</Steps>
+
+## Using the authenticate Hook
+
+The `authenticate` hook protects service methods by requiring authentication:
+
+<Tabs>
+  <Tab title="Single Strategy">
+    ```typescript
+    import { authenticate } from '@feathersjs/authentication'
+
+    app.service('messages').hooks({
+      before: {
+        all: [authenticate('jwt')]
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="Multiple Strategies">
+    ```typescript
+    // Allow either JWT or API key authentication
+    app.service('messages').hooks({
+      before: {
+        all: [authenticate('jwt', 'api-key')]
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="With Options">
+    ```typescript
+    app.service('messages').hooks({
+      before: {
+        all: [authenticate({
+          strategies: ['jwt'],
+          service: 'authentication'  // Custom auth service path
+        })]
+      }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Accessing Authenticated User
+
+After successful authentication, the user entity is available in `params`:
+
+```typescript
+app.service('messages').hooks({
+  before: {
+    create: [authenticate('jwt')]
+  }
+})
+
+// In your service method
+class MessageService {
+  async create(data, params) {
+    const user = params.user
+    console.log('Creating message for user:', user.id)
+    
+    return {
+      ...data,
+      userId: user.id,
+      createdAt: new Date()
+    }
+  }
+}
+```
+
+## Real-time Connection Management
+
+The authentication system automatically manages WebSocket connections:
+
+```typescript
+// connections.ts:46-78
+// When a user logs in via WebSocket:
+// 1. Token expiration timer is set
+// 2. Authentication info is added to connection
+// 3. Connection is automatically closed when token expires
+
+if (accessToken && event === 'login') {
+  const { exp } = await this.authentication.verifyAccessToken(accessToken)
+  const duration = exp * 1000 - Date.now()
+  
+  // Auto-disconnect when token expires
+  const timer = setTimeout(() => 
+    this.app.emit('disconnect', connection), 
+    duration
+  )
+}
+```
+
+## Security Best Practices
+
+<Warning>
+  **Keep your secret secure!** Never commit your JWT secret to version control. Use environment variables:
+  
+  ```typescript
+  // config/default.json
+  {
+    "authentication": {
+      "secret": process.env.AUTH_SECRET
+    }
+  }
+  ```
+</Warning>
+
+### Recommendations
+
+1. **Use strong secrets** - Generate a cryptographically secure random string (at least 32 characters)
+2. **Set appropriate token expiration** - Balance security and user experience (1d for web, 30d for mobile)
+3. **Use HTTPS in production** - Always transmit tokens over secure connections
+4. **Rotate secrets periodically** - Implement a key rotation strategy
+5. **Validate token audience** - Ensure tokens are used for the intended application
+6. **Use refresh tokens** - Implement refresh token rotation for long-lived sessions
+
+## Custom Token Payload
+
+Extend the `getPayload` method to add custom claims:
+
+```typescript
+class CustomAuthService extends AuthenticationService {
+  async getPayload(authResult, params) {
+    const payload = await super.getPayload(authResult, params)
+    
+    return {
+      ...payload,
+      roles: authResult.user.roles,
+      permissions: authResult.user.permissions,
+      tenantId: authResult.user.tenantId
+    }
+  }
+}
+```
+
+## Custom Token Options
+
+Customize token options per request:
+
+```typescript
+app.service('authentication').create(
+  { strategy: 'local', email, password },
+  {
+    jwtOptions: {
+      expiresIn: '7d',  // Custom expiration
+      audience: 'mobile-app'
+    }
+  }
+)
+```
+
+## Logging Out
+
+Remove authentication (triggers `logout` event):
+
+```typescript
+// Client-side logout
+await app.service('authentication').remove(null)
+
+// The service verifies the token and triggers logout hooks
+// Real-time connections are cleaned up automatically
+```
+
+## Events
+
+The authentication service emits events during the authentication lifecycle:
+
+- `login` - After successful authentication
+- `logout` - After successful logout
+- `disconnect` - When a real-time connection closes
+
+```typescript
+app.service('authentication').on('login', (authResult, params) => {
+  console.log('User logged in:', authResult.user.email)
+})
+
+app.service('authentication').on('logout', (authResult, params) => {
+  console.log('User logged out')
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="JWT Strategy" icon="key" href="/guides/authentication/jwt">
+    Learn about JWT token authentication
+  </Card>
+  <Card title="Local Strategy" icon="lock" href="/guides/authentication/local">
+    Implement username/password authentication
+  </Card>
+  <Card title="OAuth Strategy" icon="users" href="/guides/authentication/oauth">
+    Add social login with OAuth providers
+  </Card>
+</CardGroup>

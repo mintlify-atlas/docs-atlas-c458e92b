@@ -1,0 +1,478 @@
+---
+title: Service Routing and Paths
+description: Learn how service routing works in Feathers, including path handling, route parameters, and nested services
+---
+
+## Understanding Service Paths
+
+In Feathers, every service is registered at a specific path that becomes its API endpoint. The path determines how clients access the service through REST, Socket.io, or other transports.
+
+### Basic Path Registration
+
+```typescript Basic Paths
+import { feathers } from '@feathersjs/feathers'
+
+const app = feathers()
+
+// Service available at /users
+app.use('/users', userService)
+
+// Service available at /messages  
+app.use('/messages', messageService)
+
+// Service available at /api/posts
+app.use('/api/posts', postService)
+```
+
+The path you register becomes the base URL for all service method calls:
+
+- `GET /users` → `users.find()`
+- `GET /users/123` → `users.get(123)`
+- `POST /users` → `users.create(data)`
+- `PATCH /users/123` → `users.patch(123, data)`
+- `DELETE /users/123` → `users.remove(123)`
+
+## Path Normalization
+
+Feathers automatically normalizes service paths by stripping leading and trailing slashes:
+
+```typescript Path Normalization
+// All of these register the service at 'users'
+app.use('users', userService)
+app.use('/users', userService)
+app.use('/users/', userService)
+app.use('users/', userService)
+
+// All of these access the same service
+app.service('users')
+app.service('/users')
+app.service('/users/')
+app.service('users/')
+```
+
+<Note>
+  Leading and trailing slashes are always stripped, so `/users/` and `users` refer to the same service.
+</Note>
+
+## Root-Level Services
+
+You can register a service at the root path:
+
+```typescript Root Service
+app.use('/', rootService)
+
+// Access the root service
+const result = await app.service('/').get('status')
+
+// REST endpoints:
+// GET / → find()
+// GET /:id → get(id)
+// POST / → create(data)
+```
+
+## Nested Service Paths
+
+Services can be registered at nested paths to create organized API structures:
+
+```typescript Nested Paths
+app.use('/api/v1/users', userService)
+app.use('/api/v1/messages', messageService)
+app.use('/api/v2/users', userServiceV2)
+
+// Access nested services
+const users = await app.service('api/v1/users').find()
+const v2Users = await app.service('api/v2/users').find()
+
+// REST endpoints:
+// GET /api/v1/users
+// POST /api/v1/messages
+// GET /api/v2/users
+```
+
+## Route Parameters
+
+Feathers routing supports dynamic route parameters using the `:param` syntax:
+
+```typescript Route Parameters
+import { Router } from '@feathersjs/transport-commons'
+
+const router = new Router()
+
+// Register routes with parameters
+router.insert('/users/:userId/posts', { service: 'posts' })
+router.insert('/teams/:teamId/members/:memberId', { service: 'members' })
+
+// Look up routes
+const result = router.lookup('/users/123/posts')
+console.log(result.data)     // { service: 'posts' }
+console.log(result.params)   // { userId: '123' }
+
+const result2 = router.lookup('/teams/456/members/789')
+console.log(result2.params)  // { teamId: '456', memberId: '789' }
+```
+
+### Accessing Route Parameters
+
+Route parameters are available in the `params.route` object within service methods and hooks:
+
+```typescript Using Route Parameters
+class UserPostsService {
+  async find(params) {
+    const userId = params.route.userId
+    
+    // Find posts for specific user
+    return this.posts.filter(post => post.userId === userId)
+  }
+  
+  async create(data, params) {
+    const userId = params.route.userId
+    
+    return {
+      ...data,
+      userId,
+      createdAt: new Date()
+    }
+  }
+}
+
+// Register with route parameters
+app.use('/users/:userId/posts', new UserPostsService())
+
+// Use the service
+const posts = await app.service('users/123/posts').find()
+```
+
+## Sub-Applications
+
+Mount entire Feathers applications as sub-applications to create modular, versioned APIs:
+
+```typescript Sub-Applications
+import { feathers } from '@feathersjs/feathers'
+
+// Create main app
+const app = feathers()
+
+// Create a sub-application for API v1
+const apiV1 = feathers()
+apiV1.use('/users', userServiceV1)
+apiV1.use('/posts', postServiceV1)
+apiV1.use('/comments', commentServiceV1)
+
+// Create a sub-application for API v2
+const apiV2 = feathers()
+apiV2.use('/users', userServiceV2)
+apiV2.use('/posts', postServiceV2)
+
+// Mount sub-apps with prefix
+app.use('/api/v1', apiV1)
+app.use('/api/v2', apiV2)
+
+// Services are now available at:
+// - /api/v1/users
+// - /api/v1/posts
+// - /api/v1/comments
+// - /api/v2/users
+// - /api/v2/posts
+```
+
+<Steps>
+  <Step title="Create Sub-Application">
+    Create a new Feathers application instance:
+    
+    ```typescript
+    const subApp = feathers()
+    ```
+  </Step>
+  
+  <Step title="Register Services">
+    Add services to the sub-application:
+    
+    ```typescript
+    subApp.use('/users', userService)
+    subApp.use('/posts', postService)
+    ```
+  </Step>
+  
+  <Step title="Mount Sub-App">
+    Mount the sub-application on the main app with a path prefix:
+    
+    ```typescript
+    app.use('/api/v1', subApp)
+    ```
+  </Step>
+</Steps>
+
+### Sub-Application Benefits
+
+- **Modular Organization**: Group related services together
+- **API Versioning**: Maintain multiple API versions side-by-side
+- **Independent Configuration**: Each sub-app can have its own hooks and settings
+- **Service Reuse**: Share services across multiple apps
+
+```typescript Sub-App with Hooks
+const adminApp = feathers()
+
+// Add admin-specific authentication
+adminApp.hooks({
+  before: {
+    all: [
+      async (context) => {
+        if (!context.params.user?.isAdmin) {
+          throw new Error('Admin access required')
+        }
+      }
+    ]
+  }
+})
+
+adminApp.use('/users', adminUserService)
+adminApp.use('/settings', settingsService)
+
+// Mount admin app
+app.use('/admin', adminApp)
+
+// All services under /admin require admin access
+```
+
+## Express Middleware and Service Paths
+
+When using Feathers with Express, you can add middleware before and after services:
+
+```typescript Middleware with Services
+import express, { json, urlencoded } from '@feathersjs/express'
+import { feathers } from '@feathersjs/feathers'
+
+const app = express(feathers())
+
+// Global middleware
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Middleware before service
+const checkApiKey = (req, res, next) => {
+  if (!req.headers['x-api-key']) {
+    return res.status(401).json({ error: 'API key required' })
+  }
+  next()
+}
+
+// Service with before/after middleware
+app.use('/api/users',
+  checkApiKey,           // Runs before service
+  userService,
+  (req, res, next) => {  // Runs after service
+    res.set('X-Custom-Header', 'value')
+    next()
+  }
+)
+```
+
+### Middleware Options
+
+Pass middleware as service options for better organization:
+
+```typescript Middleware Options
+app.use('/messages', messageService, {
+  express: {
+    before: [
+      checkAuth,
+      rateLimiter
+    ],
+    after: [
+      addResponseHeaders
+    ]
+  }
+})
+```
+
+## Router Implementation
+
+Feathers uses an efficient routing system based on a tree structure that supports parameter matching:
+
+```typescript Custom Router
+import { Router, RouteNode } from '@feathersjs/transport-commons'
+
+// Create a router
+const router = new Router()
+
+// Case-sensitive routing (default)
+router.caseSensitive = true
+
+// Insert routes
+router.insert('/users', { handler: 'userService' })
+router.insert('/users/:id/posts', { handler: 'userPostsService' })
+router.insert('/teams/:teamId/members/:memberId', { 
+  handler: 'teamMemberService' 
+})
+
+// Look up routes
+const match = router.lookup('/users/123/posts')
+if (match) {
+  console.log(match.data)    // { handler: 'userPostsService' }
+  console.log(match.params)  // { id: '123' }
+}
+
+// Remove routes
+router.remove('/users/:id/posts')
+```
+
+### Route Matching Priority
+
+1. **Exact matches** are checked first
+2. **Placeholder matches** (`:param`) are checked if no exact match
+3. **First matching placeholder** wins if multiple placeholders exist
+
+```typescript Route Priority
+router.insert('/users/admin', { type: 'admin' })
+router.insert('/users/:id', { type: 'user' })
+
+// Exact match takes priority
+router.lookup('/users/admin')  // { type: 'admin' }
+
+// Falls back to placeholder
+router.lookup('/users/123')    // { type: 'user' }, params: { id: '123' }
+```
+
+## Case Sensitivity
+
+By default, Feathers routing is case-sensitive:
+
+```typescript Case Sensitivity
+app.use('/Users', userService)      // /Users (case-sensitive)
+app.use('/USERS', adminUserService) // /USERS (different service)
+
+app.service('users')   // Not found
+app.service('Users')   // Found
+app.service('USERS')   // Found (different service)
+```
+
+To make routing case-insensitive:
+
+```typescript Case-Insensitive Routing
+const router = new Router()
+router.caseSensitive = false
+
+router.insert('/users', { service: 'users' })
+
+// All of these match the same route
+router.lookup('/users')
+router.lookup('/Users')
+router.lookup('/USERS')
+```
+
+## Service Path Patterns
+
+Common patterns for organizing service paths:
+
+<CodeGroup>
+```typescript Flat Structure
+// Simple, flat API
+app.use('/users', userService)
+app.use('/posts', postService)
+app.use('/comments', commentService)
+
+// URLs:
+// /users
+// /posts
+// /comments
+```
+
+```typescript Namespaced Structure
+// Organized by version
+app.use('/api/v1/users', userServiceV1)
+app.use('/api/v1/posts', postServiceV1)
+app.use('/api/v2/users', userServiceV2)
+
+// URLs:
+// /api/v1/users
+// /api/v1/posts
+// /api/v2/users
+```
+
+```typescript Nested Resources
+// RESTful nested resources
+app.use('/users/:userId/posts', userPostsService)
+app.use('/teams/:teamId/members', teamMembersService)
+app.use('/projects/:projectId/tasks', projectTasksService)
+
+// URLs:
+// /users/123/posts
+// /teams/456/members
+// /projects/789/tasks
+```
+
+```typescript Feature-Based Structure
+// Organized by feature/domain
+app.use('/auth/login', loginService)
+app.use('/auth/register', registerService)
+app.use('/blog/posts', blogPostService)
+app.use('/blog/comments', blogCommentService)
+
+// URLs:
+// /auth/login
+// /auth/register
+// /blog/posts
+// /blog/comments
+```
+</CodeGroup>
+
+## Complete Routing Example
+
+Here's a complete example with nested routes, parameters, and middleware:
+
+```typescript Complete Routing Example
+import express from '@feathersjs/express'
+import { feathers } from '@feathersjs/feathers'
+
+const app = express(feathers())
+
+// Middleware
+const authenticate = (req, res, next) => {
+  // Authentication logic
+  next()
+}
+
+const checkTeamAccess = async (context) => {
+  const teamId = context.params.route.teamId
+  // Check if user has access to team
+}
+
+// Team members service with route parameters
+class TeamMembersService {
+  async find(params) {
+    const { teamId } = params.route
+    return this.getTeamMembers(teamId)
+  }
+  
+  async create(data, params) {
+    const { teamId } = params.route
+    return {
+      ...data,
+      teamId,
+      joinedAt: new Date()
+    }
+  }
+}
+
+// Register services with different patterns
+app.use('/users', userService)
+app.use('/teams', teamService)
+app.use('/teams/:teamId/members', 
+  authenticate,
+  new TeamMembersService()
+)
+
+// Add authorization hook
+app.service('teams/:teamId/members').hooks({
+  before: {
+    all: [checkTeamAccess]
+  }
+})
+
+// API v2 sub-application
+const apiV2 = feathers()
+apiV2.use('/users', userServiceV2)
+app.use('/api/v2', apiV2)
+
+app.listen(3030)
+```

@@ -1,0 +1,391 @@
+---
+title: Events API
+description: Complete API reference for Feathers real-time events
+---
+
+Feathers services automatically emit events when resources are created, updated, patched, or removed. This allows you to build real-time applications by listening to these events through various transports.
+
+## Default Events
+
+Services automatically emit the following events:
+
+- **created** - Emitted after a resource is created
+- **updated** - Emitted after a resource is updated
+- **patched** - Emitted after a resource is patched
+- **removed** - Emitted after a resource is removed
+
+These events are emitted on both the service and the application.
+
+## Event Listeners
+
+Services extend Node's `EventEmitter`, so you can use all standard EventEmitter methods:
+
+### on()
+
+Listen for an event:
+
+```typescript
+service.on(event: string, listener: (data: any, context?: HookContext) => void)
+```
+
+<ParamField path="event" type="string" required>
+  The event name (e.g., `'created'`, `'patched'`)
+</ParamField>
+
+<ParamField path="listener" type="function" required>
+  Callback function that receives the event data and optional hook context
+</ParamField>
+
+```typescript
+const userService = app.service('users')
+
+userService.on('created', (user, context) => {
+  console.log('New user created:', user)
+  console.log('Created by:', context.params.user)
+})
+```
+
+### once()
+
+Listen for an event once:
+
+```typescript
+service.once(event: string, listener: (data: any, context?: HookContext) => void)
+```
+
+```typescript
+userService.once('created', (user) => {
+  console.log('First user created:', user)
+})
+```
+
+### removeListener()
+
+Remove a specific event listener:
+
+```typescript
+service.removeListener(event: string, listener: Function)
+```
+
+```typescript
+const handleCreated = (user) => {
+  console.log('User created:', user)
+}
+
+userService.on('created', handleCreated)
+userService.removeListener('created', handleCreated)
+```
+
+### removeAllListeners()
+
+Remove all listeners for an event or all events:
+
+```typescript
+service.removeAllListeners(event?: string)
+```
+
+```typescript
+// Remove all 'created' listeners
+userService.removeAllListeners('created')
+
+// Remove all listeners
+userService.removeAllListeners()
+```
+
+## Event Emission
+
+Events are automatically emitted after successful service method calls unless:
+
+1. The service's `events` option includes the event name (indicating the service handles emission itself)
+2. The `context.event` property is set to `null` in a hook
+
+### Automatic Event Emission
+
+```typescript
+// This will emit a 'created' event
+const user = await app.service('users').create({
+  name: 'John Doe',
+  email: 'john@example.com'
+})
+
+// Listen for the event
+app.service('users').on('created', (user) => {
+  console.log('User created:', user)
+})
+```
+
+### Controlling Event Emission
+
+You can control event emission in hooks:
+
+```typescript
+// Prevent event emission
+const skipEvent = async (context) => {
+  context.event = null
+}
+
+// Change the event name
+const customEvent = async (context) => {
+  context.event = 'user-registered'
+}
+
+service.hooks({
+  after: {
+    create: [customEvent]
+  }
+})
+
+service.on('user-registered', (user) => {
+  console.log('Custom event:', user)
+})
+```
+
+## Custom Events
+
+You can define custom events when registering a service:
+
+```typescript
+app.use('/messages', messageService, {
+  events: ['typing', 'delivered', 'read']
+})
+
+// Emit custom events
+app.service('messages').emit('typing', {
+  userId: 123,
+  messageId: 456
+})
+
+// Listen for custom events
+app.service('messages').on('typing', (data) => {
+  console.log('User typing:', data)
+})
+```
+
+<ParamField path="events" type="string[]" optional>
+  List of custom event names. These are merged with the default events (`created`, `updated`, `patched`, `removed`).
+</ParamField>
+
+## Service Events Configuration
+
+You can completely replace the default events:
+
+```typescript
+app.use('/notifications', notificationService, {
+  serviceEvents: ['sent', 'failed'] // Only these events, no defaults
+})
+```
+
+<ParamField path="serviceEvents" type="string[]" optional>
+  Complete list of events for this service. Unlike `events`, this replaces the default events entirely.
+</ParamField>
+
+## Event Data
+
+Events receive two arguments:
+
+1. **data** - The resource that was created, updated, patched, or removed
+2. **context** - The hook context (optional)
+
+```typescript
+service.on('created', (user, context) => {
+  console.log('Created user:', user)
+  console.log('Service path:', context.path)
+  console.log('Method:', context.method)
+  console.log('Params:', context.params)
+})
+```
+
+## Multiple Results
+
+When a method returns multiple results (e.g., `create` with an array), the event is emitted once for each result:
+
+```typescript
+const users = await app.service('users').create([
+  { name: 'John' },
+  { name: 'Jane' }
+])
+
+// 'created' event is emitted twice, once for each user
+app.service('users').on('created', (user) => {
+  console.log('User created:', user.name)
+})
+// Output:
+// User created: John
+// User created: Jane
+```
+
+## Application-Level Events
+
+The application itself is an EventEmitter and can be used for custom application events:
+
+```typescript
+app.on('login', (user) => {
+  console.log('User logged in:', user)
+})
+
+app.emit('login', { id: 1, name: 'John' })
+```
+
+## Real-Time Transports
+
+Events are the foundation for real-time updates in Feathers. When using transports like Socket.io or Primus, service events are automatically sent to connected clients.
+
+### Server-Side
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio'
+
+const app = feathers()
+app.configure(socketio())
+
+app.use('/messages', {
+  async create(data) {
+    return { id: 1, ...data }
+  }
+})
+```
+
+### Client-Side
+
+```typescript
+import io from 'socket.io-client'
+import { feathers } from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio-client'
+
+const socket = io('http://localhost:3030')
+const app = feathers()
+app.configure(socketio(socket))
+
+const messageService = app.service('messages')
+
+// Listen for real-time events
+messageService.on('created', (message) => {
+  console.log('New message:', message)
+})
+
+// Create a message (will trigger 'created' event for all connected clients)
+await messageService.create({ text: 'Hello World' })
+```
+
+## Event Filtering
+
+For real-time applications, you often want to filter which clients receive which events. This is done through channels (see Publishing & Channels documentation).
+
+```typescript
+app.on('connection', (connection) => {
+  app.channel('authenticated').join(connection)
+})
+
+app.publish('created', (data, context) => {
+  return app.channel('authenticated')
+})
+```
+
+## Event Hook
+
+Feathers uses an internal `eventHook` to handle event emission:
+
+```typescript
+export function eventHook(context: HookContext, next: NextFunction) {
+  const { events } = getServiceOptions(context.self)
+  const defaultEvent = defaultEventMap[context.method] || null
+  
+  context.event = defaultEvent
+  
+  return next().then(() => {
+    if (typeof context.event === 'string' && !events.includes(context.event)) {
+      const results = Array.isArray(context.result) 
+        ? context.result 
+        : [context.result]
+      
+      results.forEach((element) => 
+        context.self.emit(context.event, element, context)
+      )
+    }
+  })
+}
+```
+
+## Examples
+
+### Audit Logging
+
+```typescript
+const auditLog = []
+
+app.service('users').on('created', (user, context) => {
+  auditLog.push({
+    action: 'created',
+    resource: 'user',
+    resourceId: user.id,
+    userId: context.params.user?.id,
+    timestamp: new Date()
+  })
+})
+```
+
+### Send Notifications
+
+```typescript
+app.service('tasks').on('created', async (task) => {
+  if (task.assignedTo) {
+    await app.service('notifications').create({
+      userId: task.assignedTo,
+      message: `New task assigned: ${task.title}`
+    })
+  }
+})
+```
+
+### Update Caches
+
+```typescript
+const cache = new Map()
+
+app.service('products').on('patched', (product) => {
+  cache.set(product.id, product)
+})
+
+app.service('products').on('removed', (product) => {
+  cache.delete(product.id)
+})
+```
+
+### Webhook Integration
+
+```typescript
+app.service('orders').on('created', async (order) => {
+  await fetch('https://external-api.com/webhook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      event: 'order.created',
+      data: order
+    })
+  })
+})
+```
+
+## Type Definitions
+
+```typescript
+interface ServiceAddons<A = Application, S = Service> extends EventEmitter {
+  id?: string
+  hooks(options: HookOptions<A, S>): this
+}
+
+type FeathersService<A = FeathersApplication, S = Service> = 
+  S & ServiceAddons<A, S>
+
+// Default event mapping
+const defaultEventMap = {
+  create: 'created',
+  update: 'updated',
+  patch: 'patched',
+  remove: 'removed'
+}
+
+// Default events
+const defaultServiceEvents = ['created', 'updated', 'patched', 'removed']
+```

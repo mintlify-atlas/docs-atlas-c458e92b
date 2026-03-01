@@ -1,0 +1,249 @@
+---
+title: Schema System Overview
+description: Learn about Feathers schema system for type-safe data validation and transformation with JSON Schema and TypeBox
+---
+
+The Feathers schema system provides a powerful, type-safe approach to data validation and transformation. It uses JSON Schema for validation and offers seamless integration with TypeBox for TypeScript type inference.
+
+## Key Concepts
+
+The schema system consists of three main components:
+
+<Steps>
+  <Step title="Schema Definition">
+    Define your data structure using JSON Schema or TypeBox. Schemas provide type safety and validation.
+  </Step>
+  
+  <Step title="Validation">
+    Automatically validate incoming data against your schema using AJV validators.
+  </Step>
+  
+  <Step title="Resolvers">
+    Transform and resolve data properties, including virtual properties and secure data handling.
+  </Step>
+</Steps>
+
+## Installation
+
+Install the required packages:
+
+<CodeGroup>
+```bash npm
+npm install @feathersjs/schema @feathersjs/typebox
+```
+
+```bash yarn
+yarn add @feathersjs/schema @feathersjs/typebox
+```
+
+```bash pnpm
+pnpm add @feathersjs/schema @feathersjs/typebox
+```
+</CodeGroup>
+
+## Basic Schema Definition
+
+### Using JSON Schema
+
+Define schemas using standard JSON Schema format:
+
+```typescript
+import { schema, FromSchema } from '@feathersjs/schema'
+
+const userSchema = schema({
+  $id: 'User',
+  type: 'object',
+  additionalProperties: false,
+  required: ['email'],
+  properties: {
+    email: { type: 'string' },
+    password: { type: 'string' }
+  }
+} as const)
+
+// Infer TypeScript type from schema
+type User = FromSchema<typeof userSchema>
+```
+
+### Using TypeBox
+
+TypeBox provides a more TypeScript-friendly API:
+
+```typescript
+import { Type } from '@feathersjs/typebox'
+import { getValidator } from '@feathersjs/typebox'
+import { Ajv } from '@feathersjs/schema'
+
+const userSchema = Type.Object({
+  email: Type.String(),
+  password: Type.String(),
+  age: Type.Optional(Type.Number())
+})
+
+const validator = getValidator(userSchema, new Ajv())
+```
+
+## Schema Validation
+
+Schemas can automatically validate and coerce data:
+
+<Tabs>
+  <Tab title="Basic Validation">
+    ```typescript
+    const messageSchema = schema({
+      $id: 'message',
+      type: 'object',
+      required: ['text', 'read'],
+      additionalProperties: false,
+      properties: {
+        text: { type: 'string' },
+        read: { type: 'boolean' },
+        upvotes: { type: 'number' }
+      }
+    } as const)
+
+    // Validates and coerces types
+    const message = await messageSchema.validate({
+      text: 'hello',
+      read: 0,        // Coerced to false
+      upvotes: '10'   // Coerced to 10
+    })
+    // Result: { text: 'hello', read: false, upvotes: 10 }
+    ```
+  </Tab>
+  
+  <Tab title="Validation Errors">
+    ```typescript
+    try {
+      await messageSchema.validate({ text: 'failing' })
+    } catch (error) {
+      // BadRequest error with detailed validation errors
+      console.error(error.data)
+      // [{
+      //   instancePath: '',
+      //   keyword: 'required',
+      //   message: "must have required property 'read'",
+      //   params: { missingProperty: 'read' },
+      //   schemaPath: '#/required'
+      // }]
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Custom AJV">
+    ```typescript
+    import Ajv from 'ajv'
+    import addFormats from 'ajv-formats'
+
+    const customAjv = new Ajv({
+      coerceTypes: true,
+      addUsedSchema: false
+    })
+    addFormats(customAjv)
+
+    const userSchema = schema({
+      $id: 'User',
+      type: 'object',
+      properties: {
+        email: { type: 'string', format: 'email' },
+        createdAt: { type: 'string', format: 'date-time' }
+      }
+    } as const, customAjv)
+    ```
+  </Tab>
+</Tabs>
+
+## Query Syntax
+
+Create schemas for Feathers query syntax with operators like `$gt`, `$lt`, `$in`:
+
+```typescript
+import { querySyntax } from '@feathersjs/typebox'
+import { Type, Static } from '@feathersjs/typebox'
+
+const messageSchema = Type.Object({
+  text: Type.String(),
+  userId: Type.Number()
+})
+
+const messageQuerySchema = querySyntax(messageSchema)
+
+type MessageQuery = Static<typeof messageQuerySchema>
+
+// Valid queries
+const query: MessageQuery = {
+  userId: { $gt: 10, $in: [20, 30] },
+  text: 'hello',
+  $select: ['text', 'userId'],
+  $sort: { userId: 1 },
+  $limit: 10,
+  $skip: 0
+}
+```
+
+## Type Inference
+
+The schema system provides full TypeScript type inference:
+
+```typescript
+import { Infer, schema } from '@feathersjs/schema'
+import { Type, Static } from '@feathersjs/typebox'
+
+// With JSON Schema
+const jsonSchema = schema({
+  $id: 'Example',
+  type: 'object',
+  properties: {
+    name: { type: 'string' }
+  }
+} as const)
+
+type JsonType = Infer<typeof jsonSchema>
+
+// With TypeBox
+const typeboxSchema = Type.Object({
+  name: Type.String()
+})
+
+type TypeBoxType = Static<typeof typeboxSchema>
+```
+
+## Schema Extension
+
+Extend existing schemas to create new ones:
+
+```typescript
+const userDataSchema = schema({
+  $id: 'UserData',
+  type: 'object',
+  required: ['email'],
+  properties: {
+    email: { type: 'string' },
+    password: { type: 'string' }
+  }
+} as const)
+
+// Extend with additional properties
+const userSchema = schema({
+  $id: 'User',
+  type: 'object',
+  required: ['id', ...userDataSchema.definition.required],
+  properties: {
+    ...userDataSchema.definition.properties,
+    id: { type: 'number' },
+    createdAt: { type: 'string' }
+  }
+} as const)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Data Validation" icon="check" href="/guides/schema/validation">
+    Learn how to validate data in hooks and services
+  </Card>
+  
+  <Card title="Schema Resolvers" icon="arrows-rotate" href="/guides/schema/resolvers">
+    Transform data with resolvers and virtual properties
+  </Card>
+</CardGroup>

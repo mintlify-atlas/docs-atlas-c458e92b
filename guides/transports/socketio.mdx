@@ -1,0 +1,654 @@
+---
+title: Socket.io Real-Time Transport
+description: Enable real-time bidirectional communication with Socket.io for instant updates and event streaming
+---
+
+The `@feathersjs/socketio` package provides real-time functionality using [Socket.io](https://socket.io), enabling bidirectional communication between clients and your Feathers services.
+
+## Installation
+
+```bash
+npm install @feathersjs/socketio socket.io
+```
+
+## Basic Setup
+
+<Steps>
+  <Step title="Import Socket.io configuration">
+    Import the Socket.io configurator from the package:
+
+    ```typescript
+    import socketio from '@feathersjs/socketio'
+    import { feathers } from '@feathersjs/feathers'
+
+    const app = feathers()
+    ```
+  </Step>
+
+  <Step title="Configure the transport">
+    Add Socket.io to your application:
+
+    ```typescript
+    app.configure(socketio())
+    ```
+  </Step>
+
+  <Step title="Register services">
+    Services are automatically available through Socket.io:
+
+    ```typescript
+    app.use('/messages', {
+      async find() {
+        return [{ id: 1, text: 'Hello' }]
+      },
+      async create(data) {
+        return { id: 2, ...data }
+      }
+    })
+    ```
+  </Step>
+
+  <Step title="Start the server">
+    Listen on a port to start the Socket.io server:
+
+    ```typescript
+    await app.listen(3030)
+    console.log('Socket.io server running on http://localhost:3030')
+    ```
+  </Step>
+</Steps>
+
+## Complete Example
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio'
+
+const app = feathers()
+
+// Configure Socket.io
+app.configure(socketio())
+
+// Register a service
+app.use('/messages', {
+  async find() {
+    return [
+      { id: 1, text: 'Hello world' },
+      { id: 2, text: 'How are you?' }
+    ]
+  },
+
+  async create(data) {
+    const message = { id: Date.now(), ...data }
+    return message
+  }
+})
+
+// Start server
+const server = await app.listen(3030)
+console.log('Feathers Socket.io server started on port 3030')
+```
+
+## With Express Integration
+
+Socket.io works seamlessly with Express:
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import express, { rest, json } from '@feathersjs/express'
+import socketio from '@feathersjs/socketio'
+
+const app = express(feathers())
+
+// HTTP middleware
+app.use(json())
+
+// Configure both REST and Socket.io
+app.configure(rest())
+app.configure(socketio())
+
+// Services work over both transports
+app.use('/messages', messageService)
+
+await app.listen(3030)
+// Now available via:
+// - HTTP: GET http://localhost:3030/messages
+// - Socket.io: socket.emit('find', 'messages', {})
+```
+
+## Socket.io Configuration
+
+Customize Socket.io server options:
+
+<Tabs>
+  <Tab title="Basic Options">
+    Pass Socket.io server options directly:
+
+    ```typescript
+    app.configure(socketio({
+      cors: {
+        origin: 'https://example.com',
+        credentials: true
+      },
+      pingTimeout: 60000,
+      pingInterval: 25000
+    }))
+    ```
+  </Tab>
+
+  <Tab title="Custom Port">
+    Run Socket.io on a different port:
+
+    ```typescript
+    app.configure(socketio(3031))
+
+    // Or with options
+    app.configure(socketio(3031, {
+      cors: { origin: '*' }
+    }))
+    ```
+  </Tab>
+
+  <Tab title="Configuration Callback">
+    Access the Socket.io instance for advanced setup:
+
+    ```typescript
+    app.configure(socketio((io) => {
+      // Set max listeners
+      io.sockets.setMaxListeners(100)
+
+      // Enable compression
+      io.use((socket, next) => {
+        socket.compress(true)
+        next()
+      })
+
+      // Custom namespace
+      io.of('/admin').on('connection', (socket) => {
+        console.log('Admin connected')
+      })
+    }))
+    ```
+  </Tab>
+
+  <Tab title="With Options and Callback">
+    Combine options and configuration callback:
+
+    ```typescript
+    app.configure(socketio(
+      {
+        path: '/ws',
+        cors: { origin: '*' }
+      },
+      (io) => {
+        io.on('connection', (socket) => {
+          console.log('New connection:', socket.id)
+        })
+      }
+    ))
+    ```
+  </Tab>
+</Tabs>
+
+## Middleware
+
+Socket.io middleware runs when clients connect:
+
+```typescript
+import socketio, { FeathersSocket, NextFunction } from '@feathersjs/socketio'
+
+app.configure(socketio((io) => {
+  // Authentication middleware
+  io.use((socket: FeathersSocket, next: NextFunction) => {
+    const token = socket.handshake.auth.token
+
+    if (!token) {
+      return next(new Error('Authentication required'))
+    }
+
+    // Add user info to socket params
+    socket.feathers = {
+      ...socket.feathers,
+      user: { id: 123, token }
+    }
+
+    next()
+  })
+
+  // Logging middleware
+  io.use((socket: FeathersSocket, next: NextFunction) => {
+    console.log('Client connected:', socket.id)
+    socket.on('disconnect', () => {
+      console.log('Client disconnected:', socket.id)
+    })
+    next()
+  })
+}))
+```
+
+## Socket Parameters
+
+Customize parameters passed to services from socket connections:
+
+```typescript
+app.configure(socketio((io) => {
+  io.use((socket: FeathersSocket, next: NextFunction) => {
+    // Extract query parameters from handshake
+    const { channel, apiKey } = socket.handshake.query
+
+    socket.feathers = {
+      provider: 'socketio',
+      headers: socket.handshake.headers,
+      channel,
+      apiKey
+    }
+
+    next()
+  })
+}))
+
+// Services receive these params
+app.use('/messages', {
+  async find(params) {
+    console.log(params.channel)  // From socket.handshake.query
+    console.log(params.apiKey)   // From socket.handshake.query
+    console.log(params.provider) // 'socketio'
+    return []
+  }
+})
+```
+
+## Authentication
+
+Integrate authentication with Socket.io:
+
+<CodeGroup>
+```typescript Automatic
+// Authentication is handled automatically
+// when @feathersjs/authentication is configured
+import socketio from '@feathersjs/socketio'
+import { AuthenticationService } from '@feathersjs/authentication'
+
+app.configure(socketio())
+
+// Authentication parses JWT from handshake automatically
+```
+
+```typescript Manual
+import socketio, { FeathersSocket } from '@feathersjs/socketio'
+
+app.configure(socketio((io) => {
+  io.use(async (socket: FeathersSocket, next) => {
+    try {
+      const authService = app.service('authentication')
+      const { accessToken } = socket.handshake.auth
+
+      if (accessToken) {
+        const authentication = await authService.parse(
+          socket.handshake,
+          null,
+          'jwt'
+        )
+
+        if (authentication) {
+          socket.feathers!.authentication = authentication
+          await authService.create(authentication, {
+            provider: 'socketio',
+            connection: socket.feathers
+          })
+        }
+      }
+
+      next()
+    } catch (error) {
+      next(error)
+    }
+  })
+}))
+```
+</CodeGroup>
+
+## Client Usage
+
+<Tabs>
+  <Tab title="Browser Client">
+    Connect from the browser:
+
+    ```typescript
+    import io from 'socket.io-client'
+
+    const socket = io('http://localhost:3030')
+
+    // Call service methods
+    socket.emit('find', 'messages', {}, (error, result) => {
+      if (error) {
+        console.error(error)
+      } else {
+        console.log('Messages:', result)
+      }
+    })
+
+    socket.emit('create', 'messages', { text: 'Hello!' }, (error, message) => {
+      console.log('Created:', message)
+    })
+
+    // Listen to events
+    socket.on('messages created', (message) => {
+      console.log('New message:', message)
+    })
+    ```
+  </Tab>
+
+  <Tab title="With Authentication">
+    Authenticate the socket connection:
+
+    ```typescript
+    const socket = io('http://localhost:3030', {
+      auth: {
+        token: 'your-jwt-token'
+      }
+    })
+
+    // Or authenticate after connection
+    socket.emit('create', 'authentication', {
+      strategy: 'local',
+      email: 'user@example.com',
+      password: 'secret'
+    }, (error, authResult) => {
+      if (!error) {
+        console.log('Authenticated:', authResult.accessToken)
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="Query Parameters">
+    Pass parameters during connection:
+
+    ```typescript
+    const socket = io('http://localhost:3030', {
+      query: {
+        channel: 'general',
+        apiKey: 'abc123'
+      }
+    })
+
+    // These are available in socket.handshake.query
+    ```
+  </Tab>
+</Tabs>
+
+## Real-Time Events
+
+Services automatically emit real-time events:
+
+```typescript
+app.use('/messages', messageService)
+
+// Configure event channels
+app.service('messages').publish((data, context) => {
+  // Send to all connected clients
+  return app.channel('everybody')
+})
+
+app.on('connection', (connection) => {
+  // Add connection to channel
+  app.channel('everybody').join(connection)
+})
+
+app.on('disconnect', (connection) => {
+  // Remove from channels on disconnect
+  app.channel('everybody').leave(connection)
+})
+```
+
+Clients receive these events:
+
+```javascript
+// Client-side
+socket.on('messages created', (message) => {
+  console.log('New message created:', message)
+})
+
+socket.on('messages patched', (message) => {
+  console.log('Message updated:', message)
+})
+
+socket.on('messages removed', (message) => {
+  console.log('Message deleted:', message)
+})
+```
+
+## Connection Management
+
+Track and manage socket connections:
+
+```typescript
+app.configure(socketio((io) => {
+  io.on('connection', (socket) => {
+    console.log('New connection:', socket.id)
+
+    // Access Feathers params
+    const params = socket.feathers
+    console.log('Connection params:', params)
+
+    socket.on('disconnect', (reason) => {
+      console.log('Disconnected:', socket.id, reason)
+    })
+  })
+}))
+
+// Listen to Feathers connection events
+app.on('connection', (connection) => {
+  console.log('Feathers connection established')
+
+  // Add to channels
+  app.channel('online').join(connection)
+
+  if (connection.user) {
+    app.channel(`user/${connection.user.id}`).join(connection)
+  }
+})
+
+app.on('disconnect', (connection) => {
+  console.log('Feathers connection closed')
+})
+```
+
+## Channels and Publishing
+
+Control which connections receive real-time events:
+
+```typescript
+app.service('messages').publish('created', (data, context) => {
+  // Send to specific channels
+  return [
+    app.channel('everybody'),
+    app.channel(`room/${data.roomId}`)
+  ]
+})
+
+app.service('messages').publish('patched', (data, context) => {
+  // Send only to the creator and admins
+  return [
+    app.channel(`user/${data.userId}`),
+    app.channel('admins')
+  ]
+})
+
+// Dynamic channels
+app.on('login', (authResult, { connection }) => {
+  const { user } = authResult
+
+  app.channel('authenticated').join(connection)
+
+  if (user.role === 'admin') {
+    app.channel('admins').join(connection)
+  }
+
+  // Join room channels
+  user.rooms?.forEach((roomId) => {
+    app.channel(`room/${roomId}`).join(connection)
+  })
+})
+```
+
+## Custom Events
+
+Send custom events to clients:
+
+```typescript
+app.configure(socketio((io) => {
+  // Broadcast custom events
+  setInterval(() => {
+    io.emit('server-time', { time: new Date() })
+  }, 1000)
+
+  io.on('connection', (socket) => {
+    // Listen to custom events from clients
+    socket.on('ping', () => {
+      socket.emit('pong')
+    })
+  })
+}))
+```
+
+## Error Handling
+
+Handle errors in Socket.io connections:
+
+```typescript
+app.configure(socketio((io) => {
+  io.use((socket, next) => {
+    try {
+      // Validation logic
+      if (!socket.handshake.auth.token) {
+        throw new Error('Token required')
+      }
+      next()
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  io.on('connection', (socket) => {
+    socket.on('error', (error) => {
+      console.error('Socket error:', error)
+    })
+  })
+}))
+
+// Service errors are sent back to the client
+app.use('/messages', {
+  async get(id) {
+    throw new Error('Something went wrong')
+  }
+})
+
+// Client receives the error in the callback
+socket.emit('get', 'messages', 1, (error, result) => {
+  if (error) {
+    console.error('Error:', error.message)
+  }
+})
+```
+
+## TypeScript Support
+
+```typescript
+import { feathers, Service } from '@feathersjs/feathers'
+import socketio, { FeathersSocket, NextFunction } from '@feathersjs/socketio'
+import { Server } from 'socket.io'
+
+interface Message {
+  id: number
+  text: string
+  userId: number
+}
+
+interface ServiceTypes {
+  messages: Service<Message>
+}
+
+const app = feathers<ServiceTypes>()
+
+app.configure(socketio((io: Server) => {
+  io.use((socket: FeathersSocket, next: NextFunction) => {
+    socket.feathers = {
+      provider: 'socketio',
+      headers: socket.handshake.headers
+    }
+    next()
+  })
+}))
+
+app.use('/messages', {
+  async find() {
+    return [{ id: 1, text: 'Hello', userId: 1 }]
+  }
+})
+```
+
+## API Reference
+
+### socketio(callback?)
+
+Configures Socket.io transport.
+
+**Signature:**
+```typescript
+socketio(callback?: (io: Server) => void)
+socketio(options: Partial<ServerOptions>, callback?: (io: Server) => void)
+socketio(port: number, options?: Partial<ServerOptions>, callback?: (io: Server) => void)
+```
+
+**Parameters:**
+- `port` - Optional port number for Socket.io server
+- `options` - Socket.io [ServerOptions](https://socket.io/docs/v4/server-options/)
+- `callback` - Function called with Socket.io server instance
+
+### Middleware Types
+
+**FeathersSocket:**
+Extended Socket.io socket with Feathers params:
+```typescript
+interface FeathersSocket extends Socket {
+  feathers?: Params & { [key: string]: any }
+}
+```
+
+**NextFunction:**
+```typescript
+type NextFunction = (err?: any) => void
+```
+
+## Performance Tips
+
+1. **Set Max Listeners**: Prevent memory leaks with many services
+   ```typescript
+   app.configure(socketio((io) => {
+     io.sockets.setMaxListeners(64)
+   }))
+   ```
+
+2. **Use Channels Efficiently**: Only send events to relevant clients
+   ```typescript
+   app.service('messages').publish((data) => {
+     return app.channel(`room/${data.roomId}`)
+   })
+   ```
+
+3. **Enable Compression**: Reduce bandwidth usage
+   ```typescript
+   app.configure(socketio({
+     perMessageDeflate: true
+   }))
+   ```
+
+4. **Adjust Timeouts**: Tune for your use case
+   ```typescript
+   app.configure(socketio({
+     pingTimeout: 60000,
+     pingInterval: 25000
+   }))
+   ```

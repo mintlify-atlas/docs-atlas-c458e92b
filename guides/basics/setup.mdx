@@ -1,0 +1,351 @@
+---
+title: Application Setup and Configuration
+description: Learn how to set up and configure a Feathers application with services, settings, and middleware
+---
+
+## Creating a Feathers Application
+
+The foundation of every Feathers application starts with the `feathers()` function, which creates a new application instance.
+
+<CodeGroup>
+```typescript Basic Setup
+import { feathers } from '@feathersjs/feathers'
+
+const app = feathers()
+```
+
+```typescript With TypeScript Types
+import { feathers, Application } from '@feathersjs/feathers'
+
+interface Services {
+  users: any
+  messages: any
+}
+
+interface Settings {
+  port: number
+  host: string
+}
+
+const app = feathers<Services, Settings>()
+```
+</CodeGroup>
+
+The application instance extends Node's `EventEmitter` and provides the core functionality for registering services, configuring middleware, and managing application lifecycle.
+
+## Application Settings
+
+Feathers applications use a simple key-value store for configuration settings, similar to Express.
+
+<Steps>
+  <Step title="Set Configuration Values">
+    Use `app.set()` to store configuration values:
+    
+    ```typescript
+    app.set('port', 3030)
+    app.set('host', 'localhost')
+    app.set('authentication', {
+      secret: 'your-secret-key',
+      strategies: ['jwt', 'local']
+    })
+    ```
+  </Step>
+  
+  <Step title="Retrieve Configuration Values">
+    Use `app.get()` to retrieve stored values:
+    
+    ```typescript
+    const port = app.get('port')  // 3030
+    const host = app.get('host')  // 'localhost'
+    ```
+  </Step>
+  
+  <Step title="Chain Method Calls">
+    The `set()` method returns the app instance, allowing method chaining:
+    
+    ```typescript
+    app
+      .set('port', 3030)
+      .set('host', 'localhost')
+      .use('/users', userService)
+    ```
+  </Step>
+</Steps>
+
+## Using Express with Feathers
+
+For HTTP/REST APIs, Feathers integrates seamlessly with Express, combining Feathers services with Express middleware.
+
+<CodeGroup>
+```typescript Basic Express Setup
+import express, { rest, errorHandler } from '@feathersjs/express'
+import { feathers } from '@feathersjs/feathers'
+
+const app = express(feathers())
+
+// Configure REST API
+app.configure(rest())
+
+// Add your services here
+app.use('/users', userService)
+
+// Error handling
+app.use(errorHandler())
+```
+
+```typescript With Middleware
+import express, { rest, json, urlencoded, errorHandler } from '@feathersjs/express'
+import { feathers } from '@feathersjs/feathers'
+import cors from 'cors'
+import compression from 'compression'
+
+const app = express(feathers())
+
+// Middleware
+app.use(cors())
+app.use(compression())
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Configure REST
+app.configure(rest())
+
+// Services
+app.use('/users', userService)
+app.use('/messages', messageService)
+
+// Error handling
+app.use(errorHandler())
+```
+
+```typescript Existing Express App
+import express from 'express'
+import expressify from '@feathersjs/express'
+import { feathers } from '@feathersjs/feathers'
+
+// Create Express app first
+const expressApp = express()
+
+// Add Express middleware
+expressApp.use('/static', express.static('public'))
+
+// Convert to Feathers app
+const app = expressify(feathers(), expressApp)
+
+// Now you can use Feathers services
+app.use('/api/users', userService)
+```
+</CodeGroup>
+
+## Application Configuration
+
+The `configure()` method allows you to organize application setup into reusable configuration functions.
+
+```typescript Configuration Pattern
+import { Application } from '@feathersjs/feathers'
+
+// Define a configuration function
+function configureDatabase(app: Application) {
+  const connectionString = app.get('mongodb')
+  // Database setup logic here
+  app.set('mongoClient', client)
+}
+
+function configureAuthentication(app: Application) {
+  // Authentication setup logic here
+}
+
+// Apply configurations
+app
+  .configure(configureDatabase)
+  .configure(configureAuthentication)
+```
+
+The configuration function receives the app instance and `this` is also bound to the app, giving you flexibility in how you access it.
+
+## Application Lifecycle
+
+Feathers provides lifecycle methods to manage your application's startup and shutdown processes.
+
+<Steps>
+  <Step title="Setup Phase">
+    The `setup()` method is called when the server starts and triggers the `setup()` method on all registered services:
+    
+    ```typescript
+    app.use('/users', {
+      async setup(app, path) {
+        console.log(`Setting up service at path: ${path}`)
+        // Initialize database connections, caches, etc.
+      },
+      
+      async get(id) {
+        return { id }
+      }
+    })
+    
+    // Start the server and trigger setup
+    const server = await app.listen(3030)
+    ```
+  </Step>
+  
+  <Step title="Teardown Phase">
+    The `teardown()` method gracefully shuts down the application and all services:
+    
+    ```typescript
+    app.use('/users', {
+      async setup(app, path) {
+        this.connection = await connectToDatabase()
+      },
+      
+      async teardown(app, path) {
+        console.log(`Tearing down service at: ${path}`)
+        await this.connection.close()
+      },
+      
+      async get(id) {
+        return { id }
+      }
+    })
+    
+    // Gracefully shutdown
+    await app.teardown()
+    ```
+  </Step>
+  
+  <Step title="Setup Hooks">
+    You can also add hooks to the setup and teardown lifecycle:
+    
+    ```typescript
+    app.hooks({
+      setup: [
+        async (context) => {
+          console.log('Application is setting up')
+        }
+      ],
+      teardown: [
+        async (context) => {
+          console.log('Application is shutting down')
+        }
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Starting the Server
+
+For Express-based applications, use the `listen()` method to start the HTTP server:
+
+```typescript Starting the Server
+const port = app.get('port') || 3030
+const host = app.get('host') || 'localhost'
+
+const server = await app.listen(port)
+
+console.log(`Feathers app started on http://${host}:${port}`)
+
+// The server is available as app.server
+process.on('SIGTERM', async () => {
+  await app.teardown()
+  process.exit(0)
+})
+```
+
+The `listen()` method automatically calls `setup()` on the application and all registered services.
+
+## Event Emitter
+
+Since Feathers applications extend Node's `EventEmitter`, you can listen to and emit custom events:
+
+```typescript Using Events
+// Listen to custom events
+app.on('connection', (connection) => {
+  console.log('New connection established')
+})
+
+app.on('disconnect', (connection) => {
+  console.log('Connection closed')
+})
+
+// Emit custom events
+app.emit('connection', { id: 'abc123' })
+```
+
+## Sub-Applications
+
+You can mount entire Feathers applications as sub-applications to create modular API structures:
+
+```typescript Sub-Applications
+import { feathers } from '@feathersjs/feathers'
+
+// Create a sub-application
+const apiV2 = feathers()
+
+apiV2.use('/users', userServiceV2)
+apiV2.use('/posts', postServiceV2)
+
+// Mount sub-app with prefix
+app.use('/api/v2', apiV2)
+
+// Services are now available at:
+// - /api/v2/users
+// - /api/v2/posts
+```
+
+When mounting a sub-application, all its services are automatically registered with the combined path prefix.
+
+<Note>
+  The `listen()` method is specific to Express-based applications. For Socket.io or other transports, you'll need to set up the server manually and call `app.setup(server)` explicitly.
+</Note>
+
+## Complete Example
+
+Here's a complete example bringing together all the setup concepts:
+
+```typescript Complete Application Setup
+import express, {
+  rest,
+  json,
+  urlencoded,
+  errorHandler,
+  notFound
+} from '@feathersjs/express'
+import { feathers } from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio'
+import cors from 'cors'
+
+const app = express(feathers())
+
+// Settings
+app.set('port', 3030)
+app.set('host', 'localhost')
+
+// Middleware
+app.use(cors())
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Configure transports
+app.configure(rest())
+app.configure(socketio())
+
+// Services
+app.use('/users', userService)
+app.use('/messages', messageService)
+
+// Error handling
+app.use(notFound())
+app.use(errorHandler())
+
+// Lifecycle hooks
+app.hooks({
+  setup: [async () => console.log('App starting up')],
+  teardown: [async () => console.log('App shutting down')]
+})
+
+// Start server
+const port = app.get('port')
+const server = await app.listen(port)
+
+console.log(`Feathers app listening on http://localhost:${port}`)
+```

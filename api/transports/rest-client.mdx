@@ -1,0 +1,427 @@
+---
+title: REST Client
+description: API reference for @feathersjs/rest-client providing REST service connections for Feathers clients
+---
+
+# REST Client
+
+The `@feathersjs/rest-client` module provides REST API connectivity for Feathers client applications. It supports multiple HTTP libraries including Fetch, Axios, and Superagent.
+
+## Installation
+
+```bash
+npm install @feathersjs/rest-client
+```
+
+You'll also need one of the supported HTTP libraries:
+
+```bash
+# For Fetch API (browser or node-fetch)
+npm install node-fetch
+
+# For Axios
+npm install axios
+
+# For Superagent  
+npm install superagent
+```
+
+## restClient()
+
+Creates a REST client connection factory.
+
+### Signature
+
+```typescript
+function restClient<ServiceTypes = any>(base?: string): Transport<ServiceTypes>
+```
+
+<ParamField path="base" type="string" optional default="''">
+  Base URL for all service requests
+</ParamField>
+
+### Returns
+
+<ResponseField name="Transport" type="Transport<ServiceTypes>">
+  An object with connection handlers for different HTTP libraries:
+  - `fetch`: Fetch API connection
+  - `axios`: Axios connection
+  - `superagent`: Superagent connection
+</ResponseField>
+
+## fetch()
+
+Configures REST client to use the Fetch API.
+
+### Signature
+
+```typescript
+rest(base).fetch(
+  connection: typeof fetch,
+  options?: any,
+  Service?: typeof Base
+): TransportConnection<ServiceTypes>
+```
+
+<ParamField path="connection" type="typeof fetch" required>
+  Fetch function (browser fetch or node-fetch)
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  Default fetch options applied to all requests
+</ParamField>
+
+<ParamField path="Service" type="typeof Base" optional>
+  Custom service class extending Base
+</ParamField>
+
+### Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import rest from '@feathersjs/rest-client'
+
+// Browser
+const app = feathers()
+app.configure(rest('http://api.example.com').fetch(window.fetch))
+
+// Node.js
+import fetch from 'node-fetch'
+const app = feathers()
+app.configure(rest('http://api.example.com').fetch(fetch))
+
+// With options
+app.configure(rest('http://api.example.com').fetch(fetch, {
+  headers: {
+    'Accept': 'application/json'
+  }
+}))
+```
+
+## axios()
+
+Configures REST client to use Axios.
+
+### Signature
+
+```typescript
+rest(base).axios(
+  connection: AxiosInstance,
+  options?: any,
+  Service?: typeof Base
+): TransportConnection<ServiceTypes>
+```
+
+<ParamField path="connection" type="AxiosInstance" required>
+  Axios instance
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  Default axios options applied to all requests
+</ParamField>
+
+<ParamField path="Service" type="typeof Base" optional>
+  Custom service class extending Base
+</ParamField>
+
+### Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import rest from '@feathersjs/rest-client'
+import axios from 'axios'
+
+const app = feathers()
+
+// Basic setup
+app.configure(rest('http://api.example.com').axios(axios))
+
+// With custom axios instance
+const axiosInstance = axios.create({
+  timeout: 10000,
+  headers: {
+    'X-Custom-Header': 'value'
+  }
+})
+
+app.configure(rest('http://api.example.com').axios(axiosInstance))
+```
+
+## superagent()
+
+Configures REST client to use Superagent.
+
+### Signature
+
+```typescript
+rest(base).superagent(
+  connection: SuperAgentStatic,
+  options?: any,
+  Service?: typeof Base
+): TransportConnection<ServiceTypes>
+```
+
+<ParamField path="connection" type="SuperAgentStatic" required>
+  Superagent library
+</ParamField>
+
+<ParamField path="options" type="object" optional>
+  Default superagent options applied to all requests
+</ParamField>
+
+<ParamField path="Service" type="typeof Base" optional>
+  Custom service class extending Base
+</ParamField>
+
+### Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import rest from '@feathersjs/rest-client'
+import superagent from 'superagent'
+
+const app = feathers()
+
+app.configure(rest('http://api.example.com').superagent(superagent))
+
+// With options
+app.configure(rest('http://api.example.com').superagent(superagent, {
+  headers: {
+    'Authorization': 'Bearer token'
+  }
+}))
+```
+
+## Service Methods
+
+REST client services implement all standard Feathers service methods:
+
+### find()
+
+```typescript
+const messages = app.service('messages')
+const result = await messages.find({
+  query: {
+    $limit: 10,
+    read: false
+  }
+})
+```
+
+### get()
+
+```typescript
+const message = await messages.get(123, {
+  query: { $select: ['text', 'userId'] }
+})
+```
+
+### create()
+
+```typescript
+const newMessage = await messages.create({
+  text: 'Hello world!',
+  userId: 1
+})
+```
+
+### update()
+
+```typescript
+const updated = await messages.update(123, {
+  text: 'Updated text',
+  userId: 1
+})
+```
+
+### patch()
+
+```typescript
+const patched = await messages.patch(123, {
+  read: true
+})
+```
+
+### remove()
+
+```typescript
+const removed = await messages.remove(123)
+```
+
+## Custom Methods
+
+Register custom service methods:
+
+```typescript
+app.use('/messages', messageService, {
+  methods: ['find', 'get', 'create', 'archive']
+})
+
+const messages = app.service('messages')
+await messages.archive({ messageId: 123 })
+```
+
+## Params
+
+REST client params support:
+
+<ParamField path="query" type="object" optional>
+  Query parameters sent as URL query string
+</ParamField>
+
+<ParamField path="headers" type="object" optional>
+  Custom HTTP headers for the request
+</ParamField>
+
+<ParamField path="route" type="object" optional>
+  Route parameters for parameterized URLs
+</ParamField>
+
+<ParamField path="connection" type="object" optional>
+  HTTP library-specific options for this request
+</ParamField>
+
+### Example
+
+```typescript
+const messages = app.service('messages')
+
+await messages.get(123, {
+  query: { $select: ['text'] },
+  headers: {
+    'Authorization': 'Bearer token123'
+  },
+  connection: {
+    // Fetch-specific options
+    credentials: 'include'
+  }
+})
+```
+
+## Error Handling
+
+REST client automatically converts HTTP errors to Feathers errors:
+
+```typescript
+try {
+  await messages.get(999)
+} catch (error) {
+  console.log(error.name)     // 'NotFound'
+  console.log(error.code)     // 404
+  console.log(error.message)  // 'Not Found'
+  console.log(error.data)     // Additional error data
+}
+```
+
+Error classes include:
+- `BadRequest` (400)
+- `NotAuthenticated` (401)
+- `PaymentError` (402)
+- `Forbidden` (403)
+- `NotFound` (404)
+- `MethodNotAllowed` (405)
+- `Timeout` (408)
+- `Conflict` (409)
+- `Unprocessable` (422)
+- `GeneralError` (500)
+- `Unavailable` (503)
+
+## HTTP Method Mapping
+
+REST client maps service methods to HTTP methods:
+
+| Service Method | HTTP Method | URL Pattern |
+|----------------|-------------|-------------|
+| `find()` | GET | `/messages` |
+| `get(id)` | GET | `/messages/:id` |
+| `create(data)` | POST | `/messages` |
+| `update(id, data)` | PUT | `/messages/:id` |
+| `patch(id, data)` | PATCH | `/messages/:id` |
+| `remove(id)` | DELETE | `/messages/:id` |
+
+Custom methods use POST with `X-Service-Method` header:
+
+```typescript
+// Custom method
+await messages.archive({ id: 123 })
+
+// Sends:
+// POST /messages
+// Headers: { X-Service-Method: 'archive' }
+// Body: { id: 123 }
+```
+
+## Authentication
+
+Integrate with Feathers authentication:
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import rest from '@feathersjs/rest-client'
+import auth from '@feathersjs/authentication-client'
+import axios from 'axios'
+
+const app = feathers()
+
+app.configure(rest('http://api.example.com').axios(axios))
+app.configure(auth())
+
+// Authenticate
+await app.authenticate({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'password'
+})
+
+// Authentication token automatically included in subsequent requests
+const messages = await app.service('messages').find()
+```
+
+## Complete Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import rest from '@feathersjs/rest-client'
+import auth from '@feathersjs/authentication-client'
+import axios from 'axios'
+
+// Create client app
+const app = feathers()
+
+// Configure REST transport
+const restClient = rest('http://localhost:3030')
+app.configure(restClient.axios(axios))
+
+// Configure authentication
+app.configure(auth({
+  storageKey: 'feathers-jwt'
+}))
+
+// Use services
+const messages = app.service('messages')
+
+// Authenticate
+try {
+  await app.authenticate({
+    strategy: 'local',
+    email: 'user@example.com',
+    password: 'password'
+  })
+  
+  // Create a message
+  const message = await messages.create({
+    text: 'Hello from REST client!'
+  })
+  
+  console.log('Created:', message)
+  
+  // Find all messages
+  const allMessages = await messages.find({
+    query: { $limit: 10 }
+  })
+  
+  console.log('Found:', allMessages.data)
+} catch (error) {
+  console.error('Error:', error)
+}
+```

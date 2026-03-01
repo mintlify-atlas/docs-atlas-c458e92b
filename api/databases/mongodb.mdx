@@ -1,0 +1,447 @@
+---
+title: MongoDB Adapter
+description: API reference for the Feathers MongoDB database adapter
+---
+
+The MongoDB adapter provides a service interface for MongoDB databases using the official MongoDB Node.js driver.
+
+## Installation
+
+```bash
+npm install @feathersjs/mongodb mongodb
+```
+
+## MongoDBService
+
+The main service class for MongoDB operations.
+
+### Constructor
+
+```typescript
+import { MongoDBService } from '@feathersjs/mongodb'
+
+const service = new MongoDBService<Result, Data, ServiceParams, PatchData>(options)
+```
+
+<ParamField path="options" type="MongoDBAdapterOptions" required>
+  Configuration options for the MongoDB adapter
+  
+  <ParamField path="Model" type="Collection | Promise<Collection>" required>
+    MongoDB collection instance or a promise that resolves to one
+  </ParamField>
+  
+  <ParamField path="id" type="string" default="_id">
+    Name of the id field property
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationParams">
+    Pagination settings with `default` and `max` page size
+  </ParamField>
+  
+  <ParamField path="multi" type="boolean | string[]">
+    Allow multiple updates. Can be `true`, `false`, or an array of method names like `['create', 'patch', 'remove']`
+  </ParamField>
+  
+  <ParamField path="disableObjectify" type="boolean">
+    If `true`, disables automatic ObjectId conversion for the id field
+  </ParamField>
+  
+  <ParamField path="useEstimatedDocumentCount" type="boolean">
+    If `true`, uses MongoDB's `estimatedDocumentCount` instead of `countDocuments` for better performance
+  </ParamField>
+</ParamField>
+
+### Service Methods
+
+#### find
+
+Retrieve multiple documents from the collection.
+
+```typescript
+await service.find(params?)
+```
+
+<ParamField path="params" type="MongoDBAdapterParams">
+  <ParamField path="query" type="AdapterQuery">
+    Query filters including `$limit`, `$skip`, `$sort`, `$select`, and MongoDB query operators
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationOptions | false">
+    Override pagination settings for this call
+  </ParamField>
+  
+  <ParamField path="pipeline" type="Document[]">
+    MongoDB aggregation pipeline stages
+  </ParamField>
+  
+  <ParamField path="mongodb" type="FindOptions">
+    Additional MongoDB-specific find options
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Paginated<Result> | Result[]">
+  Returns paginated results or an array depending on pagination settings
+</ResponseField>
+
+#### get
+
+Retrieve a single document by id.
+
+```typescript
+await service.get(id, params?)
+```
+
+<ParamField path="id" type="Id | ObjectId" required>
+  The document id to retrieve
+</ParamField>
+
+<ParamField path="params" type="MongoDBAdapterParams">
+  Query parameters
+</ParamField>
+
+<ResponseField name="result" type="Result">
+  The found document
+</ResponseField>
+
+#### create
+
+Create one or more new documents.
+
+```typescript
+await service.create(data, params?)
+```
+
+<ParamField path="data" type="Data | Data[]" required>
+  Document data to create. Can be a single object or array of objects
+</ParamField>
+
+<ParamField path="params" type="MongoDBAdapterParams">
+  <ParamField path="mongodb" type="InsertOneOptions | BulkWriteOptions">
+    MongoDB-specific insert options
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The created document(s)
+</ResponseField>
+
+#### update
+
+Completely replace a document.
+
+```typescript
+await service.update(id, data, params?)
+```
+
+<ParamField path="id" type="Id | ObjectId" required>
+  The document id to update
+</ParamField>
+
+<ParamField path="data" type="Data" required>
+  Complete document data to replace with
+</ParamField>
+
+<ParamField path="params" type="MongoDBAdapterParams">
+  <ParamField path="mongodb" type="FindOneAndReplaceOptions">
+    MongoDB-specific replace options
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Result">
+  The updated document
+</ResponseField>
+
+#### patch
+
+Partially update one or multiple documents.
+
+```typescript
+await service.patch(id, data, params?)
+```
+
+<ParamField path="id" type="Id | ObjectId | null" required>
+  The document id to patch, or `null` to patch multiple documents
+</ParamField>
+
+<ParamField path="data" type="PatchData" required>
+  Partial data to merge with existing document(s). Supports MongoDB update operators like `$set`, `$inc`, etc.
+</ParamField>
+
+<ParamField path="params" type="MongoDBAdapterParams">
+  <ParamField path="query" type="AdapterQuery">
+    Query to filter which documents to patch (when id is null)
+  </ParamField>
+  
+  <ParamField path="mongodb" type="FindOneAndUpdateOptions">
+    MongoDB-specific update options
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The patched document(s)
+</ResponseField>
+
+#### remove
+
+Remove one or multiple documents.
+
+```typescript
+await service.remove(id, params?)
+```
+
+<ParamField path="id" type="Id | ObjectId | null" required>
+  The document id to remove, or `null` to remove multiple documents
+</ParamField>
+
+<ParamField path="params" type="MongoDBAdapterParams">
+  <ParamField path="query" type="AdapterQuery">
+    Query to filter which documents to remove (when id is null)
+  </ParamField>
+  
+  <ParamField path="mongodb" type="FindOneAndDeleteOptions | DeleteOptions">
+    MongoDB-specific delete options
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The removed document(s)
+</ResponseField>
+
+## MongoDbAdapter
+
+The base adapter class that `MongoDBService` extends. Provides internal methods prefixed with `_` that bypass hooks.
+
+### Methods
+
+#### getObjectId
+
+Converts an id value to an ObjectId if appropriate.
+
+```typescript
+const objectId = adapter.getObjectId(id)
+```
+
+<ParamField path="id" type="Id | ObjectId" required>
+  The id value to convert
+</ParamField>
+
+<ResponseField name="result" type="Id | ObjectId">
+  The converted id (ObjectId if applicable)
+</ResponseField>
+
+#### getModel
+
+Retrieve the MongoDB collection instance.
+
+```typescript
+const collection = await adapter.getModel(params?)
+```
+
+<ResponseField name="result" type="Collection">
+  The MongoDB collection
+</ResponseField>
+
+#### aggregateRaw
+
+Execute a MongoDB aggregation pipeline.
+
+```typescript
+const cursor = await adapter.aggregateRaw(params)
+```
+
+<ParamField path="params" type="MongoDBAdapterParams" required>
+  <ParamField path="pipeline" type="Document[]">
+    Aggregation pipeline stages. Use `{ $feathers: true }` as a stage marker to inject Feathers query filters
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="AggregationCursor">
+  MongoDB aggregation cursor
+</ResponseField>
+
+#### findRaw
+
+Execute a MongoDB find query without processing results.
+
+```typescript
+const cursor = await adapter.findRaw(params)
+```
+
+<ResponseField name="result" type="FindCursor">
+  MongoDB find cursor
+</ResponseField>
+
+## Query Syntax
+
+The MongoDB adapter supports Feathers query syntax and MongoDB-specific operators.
+
+### Standard Query Operators
+
+```typescript
+// Find users older than 18
+await service.find({
+  query: {
+    age: { $gt: 18 }
+  }
+})
+
+// Find users with specific ids
+await service.find({
+  query: {
+    _id: { $in: [id1, id2, id3] }
+  }
+})
+
+// Complex queries with $and/$or
+await service.find({
+  query: {
+    $or: [
+      { status: 'active' },
+      { role: 'admin' }
+    ]
+  }
+})
+```
+
+### Special Query Parameters
+
+```typescript
+await service.find({
+  query: {
+    age: { $gte: 18 },
+    $select: ['name', 'email'],  // Select specific fields
+    $sort: { createdAt: -1 },     // Sort by createdAt descending
+    $limit: 10,                    // Limit to 10 results
+    $skip: 20                      // Skip first 20 results
+  }
+})
+```
+
+### Aggregation Pipeline
+
+Use the `pipeline` parameter for complex aggregations:
+
+```typescript
+await service.find({
+  pipeline: [
+    { $match: { status: 'active' } },
+    { $group: { _id: '$category', count: { $sum: 1 } } },
+    { $feathers: true }, // Inject Feathers filters here
+    { $sort: { count: -1 } }
+  ]
+})
+```
+
+### MongoDB Update Operators in patch
+
+```typescript
+// Increment a counter
+await service.patch(id, {
+  $inc: { views: 1 }
+})
+
+// Set specific fields
+await service.patch(id, {
+  $set: { status: 'published' },
+  $push: { tags: 'new-tag' }
+})
+
+// Regular patch (auto-wrapped in $set)
+await service.patch(id, {
+  name: 'Updated Name'
+})
+```
+
+## ObjectId Converters
+
+Utility functions for working with MongoDB ObjectIds in schemas.
+
+### resolveObjectId
+
+Convert a string, number, or ObjectId to ObjectId.
+
+```typescript
+import { resolveObjectId } from '@feathersjs/mongodb'
+
+const objectId = await resolveObjectId('507f1f77bcf86cd799439011')
+```
+
+### resolveQueryObjectId
+
+Convert ObjectId query parameters including `$in`, `$nin`, `$ne`.
+
+```typescript
+import { resolveQueryObjectId } from '@feathersjs/mongodb'
+
+const query = await resolveQueryObjectId({
+  $in: ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012']
+})
+```
+
+### keywordObjectId
+
+Ajv keyword for automatic ObjectId conversion in schemas.
+
+```typescript
+import { keywordObjectId } from '@feathersjs/mongodb'
+import Ajv from 'ajv'
+
+const ajv = new Ajv()
+ajv.addKeyword(keywordObjectId)
+
+const schema = {
+  type: 'object',
+  properties: {
+    userId: { type: 'string', objectid: true }
+  }
+}
+```
+
+## Example
+
+```typescript
+import { MongoDBService } from '@feathersjs/mongodb'
+import { MongoClient } from 'mongodb'
+
+interface User {
+  _id?: ObjectId
+  email: string
+  name: string
+  age: number
+}
+
+const client = await MongoClient.connect('mongodb://localhost:27017/mydb')
+const db = client.db()
+
+class UserService extends MongoDBService<User> {
+  async create(data: Partial<User>, params?: any) {
+    // Custom validation
+    if (!data.email) {
+      throw new Error('Email is required')
+    }
+    return super.create(data, params)
+  }
+}
+
+const users = new UserService({
+  Model: db.collection('users'),
+  paginate: {
+    default: 10,
+    max: 50
+  }
+})
+
+// Use the service
+const user = await users.create({
+  email: 'test@example.com',
+  name: 'Test User',
+  age: 25
+})
+
+const results = await users.find({
+  query: {
+    age: { $gte: 18 },
+    $sort: { name: 1 }
+  }
+})
+```

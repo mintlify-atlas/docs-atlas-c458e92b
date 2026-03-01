@@ -1,0 +1,225 @@
+---
+title: "Application Configuration"
+description: "Configure your Feathers application settings including server, pagination, and CORS"
+---
+
+The application configuration is defined in the `config/` directory and loaded using the [@feathersjs/configuration](https://www.npmjs.com/package/@feathersjs/configuration) package. Configuration files are loaded based on the `NODE_ENV` environment variable.
+
+## Configuration Files
+
+Feathers applications use the following configuration structure:
+
+- `config/default.json` - Default configuration for all environments
+- `config/production.json` - Production-specific overrides
+- `config/test.json` - Test environment configuration
+- `config/custom-environment-variables.json` - Maps environment variables to configuration
+
+## Configuration Schema
+
+When generating a new application with schemas enabled, Feathers creates a configuration schema that validates your application settings.
+
+<CodeGroup>
+
+```typescript TypeBox
+import { Type, getValidator, defaultAppConfiguration } from '@feathersjs/typebox'
+import type { Static } from '@feathersjs/typebox'
+import { dataValidator } from './validators'
+
+export const configurationSchema = Type.Intersect([
+  defaultAppConfiguration,
+  Type.Object({
+    host: Type.String(),
+    port: Type.Number(),
+    public: Type.String()
+  })
+])
+
+export type ApplicationConfiguration = Static<typeof configurationSchema>
+
+export const configurationValidator = getValidator(configurationSchema, dataValidator)
+```
+
+```typescript JSON Schema
+import { defaultAppSettings, getValidator } from '@feathersjs/schema'
+import type { FromSchema } from '@feathersjs/schema'
+import { dataValidator } from './validators'
+
+export const configurationSchema = {
+  $id: 'configuration',
+  type: 'object',
+  additionalProperties: false,
+  required: [ 'host', 'port', 'public' ],
+  properties: {
+    ...defaultAppSettings,
+    host: { type: 'string' },
+    port: { type: 'number' },
+    public: { type: 'string' }
+  }
+} as const
+
+export const configurationValidator = getValidator(configurationSchema, dataValidator)
+
+export type ApplicationConfiguration = FromSchema<typeof configurationSchema>
+```
+
+</CodeGroup>
+
+## Core Settings
+
+<ParamField path="host" type="string" required>
+  The hostname the server should bind to.
+  
+  **Default:** `localhost`
+  
+  **Environment Variable:** `HOSTNAME`
+</ParamField>
+
+<ParamField path="port" type="number" required>
+  The port number the server should listen on.
+  
+  **Default:** `3030`
+  
+  **Environment Variable:** `PORT`
+</ParamField>
+
+<ParamField path="public" type="string" required>
+  The path to the public directory for serving static files.
+  
+  **Default:** `./public/`
+</ParamField>
+
+<ParamField path="origins" type="string[]">
+  An array of allowed CORS origins. Used for cross-origin requests.
+  
+  **Default:** `['http://localhost:3030']`
+</ParamField>
+
+## Pagination Settings
+
+<ParamField path="paginate" type="object">
+  Default pagination settings for database queries.
+  
+  <Expandable title="properties">
+    <ParamField path="paginate.default" type="number" required>
+      The default number of items to return per page.
+      
+      **Default:** `10`
+    </ParamField>
+    
+    <ParamField path="paginate.max" type="number" required>
+      The maximum number of items that can be requested per page.
+      
+      **Default:** `50`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Example Configuration
+
+<CodeGroup>
+
+```json config/default.json
+{
+  "host": "localhost",
+  "port": 3030,
+  "public": "./public/",
+  "origins": ["http://localhost:3030"],
+  "paginate": {
+    "default": 10,
+    "max": 50
+  }
+}
+```
+
+```json config/production.json
+{
+  "host": "0.0.0.0",
+  "origins": [
+    "https://yourdomain.com",
+    "https://www.yourdomain.com"
+  ]
+}
+```
+
+```json config/custom-environment-variables.json
+{
+  "port": {
+    "__name": "PORT",
+    "__format": "number"
+  },
+  "host": "HOSTNAME"
+}
+```
+
+</CodeGroup>
+
+## Usage
+
+The configuration is automatically loaded and applied to your application:
+
+```typescript src/app.ts
+import configuration from '@feathersjs/configuration'
+
+const app = express(feathers())
+
+// Load configuration
+app.configure(configuration())
+
+// Access configuration values
+const port = app.get('port')
+const host = app.get('host')
+```
+
+## Validation
+
+When using schemas, configuration is validated during application setup. Invalid configuration will throw an error before the application starts:
+
+```typescript src/app.ts
+import configuration from '@feathersjs/configuration'
+import { configurationValidator } from './configuration'
+
+// Validate configuration on startup
+app.configure(configuration(configurationValidator))
+```
+
+## Environment Variables
+
+Map environment variables to configuration values using `config/custom-environment-variables.json`:
+
+```json
+{
+  "port": {
+    "__name": "PORT",
+    "__format": "number"
+  },
+  "host": "HOSTNAME",
+  "authentication": {
+    "secret": "FEATHERS_SECRET"
+  }
+}
+```
+
+The `__format` option converts the environment variable to the specified type. Supported formats include:
+- `number` - Parse as number
+- `json` - Parse as JSON
+- `boolean` - Parse as boolean
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use environment-specific files">
+    Keep environment-specific settings in separate files (`production.json`, `staging.json`, etc.) rather than in `default.json`.
+  </Accordion>
+  
+  <Accordion title="Never commit secrets">
+    Store sensitive values like API keys and secrets in environment variables, not in configuration files. Use `custom-environment-variables.json` to map them.
+  </Accordion>
+  
+  <Accordion title="Validate your configuration">
+    Always use configuration schemas to catch errors early and ensure your application has valid settings.
+  </Accordion>
+  
+  <Accordion title="Document custom settings">
+    Add comments to your configuration schema to document what each setting does and its valid values.
+  </Accordion>
+</AccordionGroup>

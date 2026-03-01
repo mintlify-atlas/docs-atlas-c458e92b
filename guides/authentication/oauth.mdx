@@ -1,0 +1,727 @@
+---
+title: OAuth Authentication Strategy
+description: Add OAuth 1.0 and OAuth 2.0 authentication with support for 200+ providers including Google, Facebook, GitHub, and Twitter
+---
+
+The OAuth strategy enables authentication through third-party providers like Google, Facebook, GitHub, and over 200 others. It's powered by [Grant](https://github.com/simov/grant) and supports both OAuth 1.0 and OAuth 2.0.
+
+## How OAuth Works
+
+The OAuth authentication flow:
+
+1. **User clicks "Login with Provider"** - Client redirects to OAuth service
+2. **Provider authorization** - User authorizes your app on provider's site
+3. **Callback with code** - Provider redirects back with authorization code
+4. **Token exchange** - Server exchanges code for access token
+5. **Fetch profile** - Server retrieves user profile from provider
+6. **Create or link user** - Server creates new user or links to existing account
+7. **Return JWT** - Server creates JWT and redirects with access token
+
+## Installation
+
+<CodeGroup>
+```bash npm
+npm install @feathersjs/authentication-oauth --save
+```
+
+```bash yarn
+yarn add @feathersjs/authentication-oauth
+```
+
+```bash pnpm
+pnpm add @feathersjs/authentication-oauth
+```
+</CodeGroup>
+
+## Basic Setup
+
+<Steps>
+  <Step title="Install Dependencies">
+    Install required packages:
+
+    ```bash
+    npm install @feathersjs/authentication @feathersjs/authentication-oauth
+    ```
+  </Step>
+
+  <Step title="Configure OAuth">
+    Add OAuth configuration for your providers:
+
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "secret": "your-secret-key",
+        "entity": "user",
+        "service": "users",
+        "authStrategies": ["jwt", "local"],
+        "oauth": {
+          "redirect": "http://localhost:3000",
+          "google": {
+            "key": "your-google-client-id",
+            "secret": "your-google-client-secret",
+            "scope": ["email", "profile"]
+          },
+          "github": {
+            "key": "your-github-client-id",
+            "secret": "your-github-client-secret"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Register Strategy and Service">
+    Set up OAuth strategy and service:
+
+    ```typescript
+    import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+    import { OAuthStrategy, oauth } from '@feathersjs/authentication-oauth'
+
+    // Create authentication service
+    const authentication = new AuthenticationService(app)
+    authentication.register('jwt', new JWTStrategy())
+    
+    // Register OAuth strategies
+    authentication.register('google', new OAuthStrategy())
+    authentication.register('github', new OAuthStrategy())
+    
+    app.use('/authentication', authentication)
+    
+    // Configure OAuth endpoints
+    app.configure(oauth())
+    ```
+  </Step>
+
+  <Step title="Update User Service">
+    Add provider ID fields to your user schema:
+
+    ```typescript
+    // User schema should include fields for each provider
+    interface User {
+      id: string
+      email: string
+      googleId?: string
+      githubId?: string
+      facebookId?: string
+      // ... other fields
+    }
+    ```
+  </Step>
+</Steps>
+
+## Configuration Options
+
+### OAuth Settings
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `redirect` | `string` | URL to redirect to after authentication |
+| `origins` | `string[]` | Allowed origin URLs for redirect validation |
+| `defaults` | `object` | Default settings for all providers |
+
+### Provider Settings
+
+Each provider (e.g., `google`, `github`) can have:
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `key` | `string` | OAuth client ID / API key |
+| `secret` | `string` | OAuth client secret |
+| `scope` | `string[]` | Permissions to request from provider |
+| `custom_params` | `object` | Additional provider-specific parameters |
+| `redirect_uri` | `string` | Override callback URL |
+
+### Strategy Options
+
+```typescript
+app.configure(oauth({
+  linkStrategy: 'jwt',        // Strategy to use for account linking
+  authService: 'authentication', // Authentication service path
+  expressSession: sessionMiddleware, // Custom session middleware
+  koaSession: sessionMiddleware      // Custom Koa session middleware
+}))
+```
+
+## Supported Providers
+
+Over 200 providers are supported via Grant. Common examples:
+
+- **Google** - `google`
+- **Facebook** - `facebook`
+- **GitHub** - `github`
+- **Twitter** - `twitter`
+- **Microsoft** - `microsoft`
+- **LinkedIn** - `linkedin`
+- **Apple** - `apple`
+- **Discord** - `discord`
+- **Twitch** - `twitch`
+- **Spotify** - `spotify`
+
+[View full list of providers →](https://github.com/simov/grant#200-supported-providers)
+
+## Provider Examples
+
+<Tabs>
+  <Tab title="Google">
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "oauth": {
+          "redirect": "http://localhost:3000",
+          "google": {
+            "key": process.env.GOOGLE_CLIENT_ID,
+            "secret": process.env.GOOGLE_CLIENT_SECRET,
+            "scope": ["email", "profile"],
+            "custom_params": {
+              "access_type": "offline",
+              "prompt": "consent"
+            }
+          }
+        }
+      }
+    }
+    ```
+
+    **Get credentials:**
+    1. Go to [Google Cloud Console](https://console.cloud.google.com)
+    2. Create project → Enable Google+ API
+    3. Create OAuth 2.0 credentials
+    4. Add authorized redirect URI: `http://localhost:3030/oauth/google/callback`
+  </Tab>
+
+  <Tab title="GitHub">
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "oauth": {
+          "redirect": "http://localhost:3000",
+          "github": {
+            "key": process.env.GITHUB_CLIENT_ID,
+            "secret": process.env.GITHUB_CLIENT_SECRET,
+            "scope": ["user:email"]
+          }
+        }
+      }
+    }
+    ```
+
+    **Get credentials:**
+    1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+    2. New OAuth App
+    3. Add callback URL: `http://localhost:3030/oauth/github/callback`
+  </Tab>
+
+  <Tab title="Facebook">
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "oauth": {
+          "redirect": "http://localhost:3000",
+          "facebook": {
+            "key": process.env.FACEBOOK_APP_ID,
+            "secret": process.env.FACEBOOK_APP_SECRET,
+            "scope": ["email", "public_profile"]
+          }
+        }
+      }
+    }
+    ```
+
+    **Get credentials:**
+    1. Go to [Facebook Developers](https://developers.facebook.com)
+    2. Create App → Add Facebook Login
+    3. Add redirect URI: `http://localhost:3030/oauth/facebook/callback`
+  </Tab>
+
+  <Tab title="Apple">
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "oauth": {
+          "redirect": "http://localhost:3000",
+          "apple": {
+            "key": process.env.APPLE_CLIENT_ID,
+            "secret": {
+              "key": process.env.APPLE_PRIVATE_KEY,
+              "team": process.env.APPLE_TEAM_ID
+            },
+            "scope": ["email", "name"]
+          }
+        }
+      }
+    }
+    ```
+
+    **Get credentials:**
+    1. Go to [Apple Developer Portal](https://developer.apple.com)
+    2. Create App ID with Sign In with Apple
+    3. Create Service ID and configure domains
+  </Tab>
+</Tabs>
+
+## Client Integration
+
+### Redirect to OAuth Provider
+
+```html
+<!-- Simple link approach -->
+<a href="http://localhost:3030/oauth/google">
+  Login with Google
+</a>
+
+<a href="http://localhost:3030/oauth/github">
+  Login with GitHub
+</a>
+```
+
+### With Custom Redirect
+
+```typescript
+// Specify where to redirect after authentication
+const redirectUrl = encodeURIComponent('/dashboard')
+window.location.href = `http://localhost:3030/oauth/google?redirect=${redirectUrl}`
+```
+
+### Popup Window
+
+```javascript
+function loginWithProvider(provider) {
+  const width = 600
+  const height = 700
+  const left = (window.innerWidth - width) / 2
+  const top = (window.innerHeight - height) / 2
+  
+  const popup = window.open(
+    `http://localhost:3030/oauth/${provider}`,
+    'OAuth Login',
+    `width=${width},height=${height},left=${left},top=${top}`
+  )
+  
+  // Listen for redirect with token
+  window.addEventListener('message', (event) => {
+    if (event.origin === window.location.origin) {
+      const { accessToken } = event.data
+      if (accessToken) {
+        popup.close()
+        // Store token and redirect
+        localStorage.setItem('accessToken', accessToken)
+        window.location.href = '/dashboard'
+      }
+    }
+  })
+}
+```
+
+### Receive Token
+
+After successful authentication, the user is redirected with the token:
+
+```
+http://localhost:3000#access_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+Extract the token:
+
+```javascript
+// Parse token from URL hash
+const hash = window.location.hash.substring(1)
+const params = new URLSearchParams(hash)
+const accessToken = params.get('access_token')
+
+if (accessToken) {
+  // Store token
+  localStorage.setItem('accessToken', accessToken)
+  
+  // Clean URL
+  window.history.replaceState(null, '', window.location.pathname)
+  
+  // Redirect to app
+  window.location.href = '/dashboard'
+}
+
+// Check for error
+const error = params.get('error')
+if (error) {
+  console.error('Authentication failed:', error)
+}
+```
+
+## Account Linking
+
+Link OAuth accounts to existing users:
+
+### Link via JWT
+
+```typescript
+// User is already logged in with JWT
+const currentToken = localStorage.getItem('accessToken')
+
+// Link OAuth account
+window.location.href = 
+  `http://localhost:3030/oauth/google?feathers_token=${currentToken}`
+```
+
+The OAuth strategy will:
+1. Verify the existing JWT token
+2. Get the current user
+3. Link the OAuth account to the user (via `updateEntity`)
+4. Return a new JWT
+
+### Link in Custom Strategy
+
+```typescript
+import { OAuthStrategy } from '@feathersjs/authentication-oauth'
+
+class CustomOAuthStrategy extends OAuthStrategy {
+  async getEntityData(profile, existingEntity, params) {
+    const baseData = await super.getEntityData(profile, existingEntity, params)
+    
+    return {
+      ...baseData,
+      [`${this.name}Id`]: profile.id,
+      [`${this.name}AccessToken`]: profile.accessToken,
+      [`${this.name}RefreshToken`]: profile.refreshToken,
+      lastLogin: new Date()
+    }
+  }
+}
+
+authentication.register('google', new CustomOAuthStrategy())
+```
+
+## Customization
+
+### Custom Profile Data
+
+Extract additional data from OAuth profile:
+
+```typescript
+import { OAuthStrategy } from '@feathersjs/authentication-oauth'
+
+class GoogleStrategy extends OAuthStrategy {
+  async getEntityData(profile, existingEntity, params) {
+    const baseData = await super.getEntityData(profile, existingEntity, params)
+    
+    // Extract Google-specific data
+    return {
+      ...baseData,
+      googleId: profile.sub || profile.id,
+      email: profile.email,
+      firstName: profile.given_name,
+      lastName: profile.family_name,
+      avatar: profile.picture,
+      emailVerified: profile.email_verified
+    }
+  }
+}
+
+authentication.register('google', new GoogleStrategy())
+```
+
+### Custom Entity Query
+
+Customize how users are found:
+
+```typescript
+class CustomOAuthStrategy extends OAuthStrategy {
+  async getEntityQuery(profile, params) {
+    // Default queries by `${strategy}Id`
+    // Override to search by email first
+    if (profile.email) {
+      return {
+        $or: [
+          { [`${this.name}Id`]: profile.id },
+          { email: profile.email }
+        ]
+      }
+    }
+    
+    return super.getEntityQuery(profile, params)
+  }
+}
+```
+
+### Create vs Update Logic
+
+```typescript
+class CustomOAuthStrategy extends OAuthStrategy {
+  async getEntityData(profile, existingEntity, params) {
+    const baseData = {
+      [`${this.name}Id`]: profile.id,
+      email: profile.email
+    }
+    
+    // Different logic for create vs update
+    if (existingEntity) {
+      // Only update OAuth-specific fields
+      return {
+        ...baseData,
+        lastLogin: new Date()
+      }
+    } else {
+      // Set all fields for new user
+      return {
+        ...baseData,
+        firstName: profile.given_name,
+        lastName: profile.family_name,
+        avatar: profile.picture,
+        createdAt: new Date()
+      }
+    }
+  }
+}
+```
+
+### Prevent User Creation
+
+```typescript
+import { NotAuthenticated } from '@feathersjs/errors'
+
+class NoCreateOAuthStrategy extends OAuthStrategy {
+  async authenticate(authentication, originalParams) {
+    const { provider, ...params } = originalParams
+    const profile = await this.getProfile(authentication, params)
+    const existingEntity = await this.findEntity(profile, params)
+    
+    // Don't create new users, only link existing ones
+    if (!existingEntity) {
+      throw new NotAuthenticated(
+        'No account found. Please sign up first.'
+      )
+    }
+    
+    const entity = await this.updateEntity(existingEntity, profile, params)
+    
+    return {
+      authentication: { strategy: this.name },
+      [this.configuration.entity]: await this.getEntity(entity, originalParams)
+    }
+  }
+}
+```
+
+## Security Configuration
+
+### Allowed Origins
+
+<Warning>
+  Always validate redirect origins to prevent open redirect vulnerabilities.
+</Warning>
+
+```typescript
+// config/production.json
+{
+  "authentication": {
+    "oauth": {
+      "origins": [
+        "https://yourdomain.com",
+        "https://app.yourdomain.com",
+        "https://mobile.yourdomain.com"
+      ]
+    }
+  }
+}
+```
+
+The OAuth strategy validates:
+- Referer header matches allowed origin
+- Redirect parameter doesn't contain URL injection characters
+- Final redirect URL starts with allowed origin
+
+### Redirect Validation
+
+```typescript
+// strategy.ts:70-123
+// The strategy validates redirect parameters:
+// 1. Checks referer against allowed origins
+// 2. Rejects @ \ // characters that could change URL authority
+// 3. Ensures redirect doesn't contain malicious paths
+
+if (queryRedirect && /[@\\]|^\/\/|\/\//.test(queryRedirect)) {
+  throw new NotAuthenticated('Invalid redirect path.')
+}
+```
+
+### Session Security
+
+Configure secure session handling:
+
+```typescript
+import session from 'express-session'
+
+app.configure(oauth({
+  expressSession: session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production', // HTTPS only
+      httpOnly: true,                                 // No client JS access
+      maxAge: 10 * 60 * 1000,                        // 10 minutes
+      sameSite: 'lax'                                 // CSRF protection
+    }
+  })
+}))
+```
+
+### Environment Variables
+
+<Warning>
+  Never commit OAuth secrets to version control!
+</Warning>
+
+```bash
+# .env
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+GITHUB_CLIENT_ID=your-client-id
+GITHUB_CLIENT_SECRET=your-client-secret
+```
+
+```typescript
+// config/default.js
+module.exports = {
+  authentication: {
+    oauth: {
+      google: {
+        key: process.env.GOOGLE_CLIENT_ID,
+        secret: process.env.GOOGLE_CLIENT_SECRET
+      },
+      github: {
+        key: process.env.GITHUB_CLIENT_ID,
+        secret: process.env.GITHUB_CLIENT_SECRET
+      }
+    }
+  }
+}
+```
+
+## Multi-Tenancy
+
+Scope OAuth authentication to tenants:
+
+```typescript
+class TenantOAuthStrategy extends OAuthStrategy {
+  async getEntityQuery(profile, params) {
+    const baseQuery = await super.getEntityQuery(profile, params)
+    
+    // Add tenant scope
+    const tenantId = params.route?.query?.tenant || params.query?.tenant
+    
+    if (!tenantId) {
+      throw new NotAuthenticated('Tenant ID required')
+    }
+    
+    return {
+      ...baseQuery,
+      tenantId
+    }
+  }
+  
+  async getEntityData(profile, existingEntity, params) {
+    const baseData = await super.getEntityData(profile, existingEntity, params)
+    const tenantId = params.route?.query?.tenant || params.query?.tenant
+    
+    return {
+      ...baseData,
+      tenantId
+    }
+  }
+}
+
+// Login with tenant context
+window.location.href = 
+  'http://localhost:3030/oauth/google?tenant=tenant-123'
+```
+
+## Troubleshooting
+
+### Redirect URI Mismatch
+
+```
+Error: redirect_uri_mismatch
+```
+
+**Solution:** Ensure callback URL matches exactly in provider settings:
+- Development: `http://localhost:3030/oauth/google/callback`
+- Production: `https://api.yourdomain.com/oauth/google/callback`
+
+### Invalid Origin
+
+```
+Error: Referer "http://example.com" is not allowed
+```
+
+**Solution:** Add origin to allowed origins:
+
+```typescript
+{
+  "authentication": {
+    "oauth": {
+      "origins": [
+        "http://localhost:3000",
+        "https://yourdomain.com"
+      ]
+    }
+  }
+}
+```
+
+### Session Not Persisting
+
+```
+Error: Session data lost between redirect
+```
+
+**Solution:** Configure session middleware properly:
+
+```typescript
+// For Express
+import session from 'express-session'
+import RedisStore from 'connect-redis'
+
+app.use(session({
+  store: new RedisStore({ client: redisClient }),
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false
+}))
+
+app.configure(oauth())
+```
+
+### Provider Not Configured
+
+```
+Error: No oauth configuration found
+```
+
+**Solution:** Ensure `oauth` section exists in authentication config:
+
+```typescript
+{
+  "authentication": {
+    "oauth": {  // Must have this section
+      "redirect": "http://localhost:3000",
+      "google": { ... }
+    }
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="JWT Strategy" icon="key" href="/guides/authentication/jwt">
+    Understand JWT token authentication
+  </Card>
+  <Card title="Local Strategy" icon="lock" href="/guides/authentication/local">
+    Add username/password authentication
+  </Card>
+</CardGroup>

@@ -1,0 +1,642 @@
+---
+title: Working with Hooks
+description: Learn how to use hooks to add validation, authorization, and business logic to your Feathers services
+---
+
+## What are Hooks?
+
+Hooks are middleware functions that run before, after, or around service methods. They allow you to add validation, authorization, data transformation, and other business logic in a composable and reusable way.
+
+### Hook Types
+
+Feathers supports four types of hooks:
+
+- **before** - Run before the service method
+- **after** - Run after the service method completes successfully  
+- **error** - Run when the service method throws an error
+- **around** - Wrap the entire service method call
+
+## Basic Hook Usage
+
+Register hooks on a service using the `.hooks()` method:
+
+<CodeGroup>
+```typescript Before Hooks
+app.service('messages').hooks({
+  before: {
+    // Run before all methods
+    all: [
+      async (context) => {
+        console.log('Before all methods')
+      }
+    ],
+    
+    // Run only before create
+    create: [
+      async (context) => {
+        context.data.createdAt = new Date()
+      }
+    ],
+    
+    // Run only before find and get
+    find: [
+      async (context) => {
+        console.log('Finding messages')
+      }
+    ],
+    get: [
+      async (context) => {
+        console.log(`Getting message ${context.id}`)
+      }
+    ]
+  }
+})
+```
+
+```typescript After Hooks
+app.service('messages').hooks({
+  after: {
+    all: [
+      async (context) => {
+        console.log('After method completed')
+      }
+    ],
+    
+    create: [
+      async (context) => {
+        console.log('Created:', context.result)
+      }
+    ],
+    
+    find: [
+      async (context) => {
+        console.log(`Found ${context.result.length} messages`)
+      }
+    ]
+  }
+})
+```
+
+```typescript Error Hooks
+app.service('messages').hooks({
+  error: {
+    all: [
+      async (context) => {
+        console.error('Error occurred:', context.error)
+      }
+    ],
+    
+    create: [
+      async (context) => {
+        console.error('Failed to create message:', context.error.message)
+      }
+    ]
+  }
+})
+```
+</CodeGroup>
+
+## Hook Context
+
+Every hook receives a `context` object containing information about the service call:
+
+```typescript Hook Context
+const logContext = async (context) => {
+  console.log({
+    app: context.app,           // The Feathers application
+    service: context.service,   // The service this hook is for
+    path: context.path,         // The service path
+    method: context.method,     // The service method name
+    type: context.type,         // Hook type: 'before', 'after', 'error'
+    id: context.id,             // The id for get, update, patch, remove
+    data: context.data,         // Data for create, update, patch
+    params: context.params,     // Service call parameters
+    result: context.result,     // The result (after hooks only)
+    error: context.error,       // The error (error hooks only)
+    statusCode: context.statusCode  // HTTP status code (for REST)
+  })
+}
+
+app.service('messages').hooks({
+  before: {
+    all: [logContext]
+  }
+})
+```
+
+### Modifying the Context
+
+Hooks can modify the context to change behavior:
+
+<CodeGroup>
+```typescript Modify Data
+app.service('messages').hooks({
+  before: {
+    create: [
+      async (context) => {
+        // Add timestamps
+        context.data = {
+          ...context.data,
+          createdAt: new Date()
+        }
+      }
+    ],
+    
+    patch: [
+      async (context) => {
+        // Add updated timestamp
+        context.data.updatedAt = new Date()
+      }
+    ]
+  }
+})
+```
+
+```typescript Modify Query
+app.service('messages').hooks({
+  before: {
+    find: [
+      async (context) => {
+        // Add query constraints
+        context.params.query = {
+          ...context.params.query,
+          userId: context.params.user.id
+        }
+      }
+    ]
+  }
+})
+```
+
+```typescript Modify Result
+app.service('users').hooks({
+  after: {
+    all: [
+      async (context) => {
+        // Remove sensitive data
+        if (context.result.password) {
+          delete context.result.password
+        }
+        
+        // For paginated results
+        if (Array.isArray(context.result.data)) {
+          context.result.data.forEach(item => {
+            delete item.password
+          })
+        }
+      }
+    ]
+  }
+})
+```
+</CodeGroup>
+
+## Application-Level Hooks
+
+Register hooks that run for all services:
+
+```typescript Application Hooks
+app.hooks({
+  before: {
+    all: [
+      async (context) => {
+        console.log(`Calling ${context.path}.${context.method}`)
+      }
+    ],
+    
+    create: [
+      async (context) => {
+        // Add creation timestamp to all creates
+        context.data.createdAt = new Date()
+      }
+    ]
+  },
+  
+  after: {
+    all: [
+      async (context) => {
+        console.log(`Completed ${context.path}.${context.method}`)
+      }
+    ]
+  },
+  
+  error: {
+    all: [
+      async (context) => {
+        console.error(`Error in ${context.path}.${context.method}:`, context.error)
+      }
+    ]
+  }
+})
+```
+
+## Around Hooks
+
+Around hooks wrap the entire service method call and give you control over the execution flow:
+
+```typescript Around Hooks
+app.service('messages').hooks({
+  around: {
+    all: [
+      async (context, next) => {
+        console.log('Before method')
+        
+        // Call the next hook or service method
+        await next()
+        
+        console.log('After method')
+      }
+    ],
+    
+    find: [
+      // Timing hook
+      async (context, next) => {
+        const start = Date.now()
+        
+        await next()
+        
+        const duration = Date.now() - start
+        console.log(`find() took ${duration}ms`)
+      },
+      
+      // Caching hook
+      async (context, next) => {
+        const cacheKey = JSON.stringify(context.params.query)
+        const cached = cache.get(cacheKey)
+        
+        if (cached) {
+          context.result = cached
+          return  // Skip calling next()
+        }
+        
+        await next()
+        
+        cache.set(cacheKey, context.result)
+      }
+    ]
+  }
+})
+```
+
+<Note>
+  Around hooks must call `await next()` to continue execution. If you don't call `next()`, the service method won't execute.
+</Note>
+
+## Common Hook Patterns
+
+### Validation Hooks
+
+Validate data before it reaches the service:
+
+```typescript Validation
+import { BadRequest } from '@feathersjs/errors'
+
+const validateMessage = async (context) => {
+  const { data } = context
+  
+  if (!data.text || data.text.trim().length === 0) {
+    throw new BadRequest('Message text is required')
+  }
+  
+  if (data.text.length > 500) {
+    throw new BadRequest('Message text must be 500 characters or less')
+  }
+}
+
+app.service('messages').hooks({
+  before: {
+    create: [validateMessage],
+    update: [validateMessage],
+    patch: [validateMessage]
+  }
+})
+```
+
+### Authorization Hooks
+
+Check permissions before allowing operations:
+
+```typescript Authorization
+import { Forbidden, NotAuthenticated } from '@feathersjs/errors'
+
+const requireAuth = async (context) => {
+  if (!context.params.user) {
+    throw new NotAuthenticated('You must be logged in')
+  }
+}
+
+const requireOwner = async (context) => {
+  const message = await context.service.get(context.id)
+  
+  if (message.userId !== context.params.user.id) {
+    throw new Forbidden('You can only modify your own messages')
+  }
+}
+
+app.service('messages').hooks({
+  before: {
+    create: [requireAuth],
+    patch: [requireAuth, requireOwner],
+    remove: [requireAuth, requireOwner]
+  }
+})
+```
+
+### Data Sanitization
+
+Clean and transform data:
+
+```typescript Sanitization
+const sanitizeData = async (context) => {
+  const { data } = context
+  
+  // Trim strings
+  if (data.text) {
+    data.text = data.text.trim()
+  }
+  
+  if (data.title) {
+    data.title = data.title.trim()
+  }
+  
+  // Remove disallowed fields
+  delete data.id
+  delete data.createdAt
+  delete data.userId
+}
+
+app.service('messages').hooks({
+  before: {
+    create: [sanitizeData],
+    update: [sanitizeData],
+    patch: [sanitizeData]
+  }
+})
+```
+
+### Adding User Context
+
+Automatically associate records with the current user:
+
+```typescript User Context
+const setUserId = async (context) => {
+  context.data.userId = context.params.user.id
+}
+
+const limitToUser = async (context) => {
+  // Only show the current user's messages
+  context.params.query.userId = context.params.user.id
+}
+
+app.service('messages').hooks({
+  before: {
+    create: [setUserId],
+    find: [limitToUser]
+  }
+})
+```
+
+## Schema-Based Hooks
+
+Feathers provides schema-based validation and resolution hooks:
+
+<CodeGroup>
+```typescript Validation Hooks
+import { validateQuery, validateData } from '@feathersjs/schema'
+import { Type } from '@sinclair/typebox'
+
+const messageSchema = Type.Object({
+  text: Type.String({ minLength: 1, maxLength: 500 }),
+  userId: Type.Number()
+})
+
+const querySchema = Type.Object({
+  userId: Type.Optional(Type.Number()),
+  $limit: Type.Optional(Type.Number())
+})
+
+app.service('messages').hooks({
+  before: {
+    find: [validateQuery(querySchema)],
+    create: [validateData(messageSchema)]
+  }
+})
+```
+
+```typescript Resolution Hooks
+import { resolveData, resolveQuery, resolveResult } from '@feathersjs/schema'
+
+const messageDataResolver = {
+  // Add created timestamp
+  createdAt: async () => new Date(),
+  
+  // Add user ID from params
+  userId: async (value, message, context) => {
+    return context.params.user.id
+  }
+}
+
+const messageResultResolver = {
+  // Populate user data
+  user: async (value, message, context) => {
+    return context.app.service('users').get(message.userId)
+  }
+}
+
+app.service('messages').hooks({
+  around: {
+    create: [resolveData(messageDataResolver)],
+    all: [resolveResult(messageResultResolver)]
+  }
+})
+```
+</CodeGroup>
+
+## Hook Execution Order
+
+Hooks execute in a specific order:
+
+<Steps>
+  <Step title="Application-Level Around Hooks">
+    Around hooks registered at the application level run first
+  </Step>
+  
+  <Step title="Service-Level Around Hooks">
+    Around hooks registered at the service level
+  </Step>
+  
+  <Step title="Application-Level Before Hooks">
+    Before hooks from `app.hooks()`
+  </Step>
+  
+  <Step title="Service-Level Before Hooks">
+    Before hooks from `service.hooks()`
+  </Step>
+  
+  <Step title="Service Method">
+    The actual service method executes
+  </Step>
+  
+  <Step title="Service-Level After Hooks">
+    After hooks from `service.hooks()`
+  </Step>
+  
+  <Step title="Application-Level After Hooks">
+    After hooks from `app.hooks()`
+  </Step>
+</Steps>
+
+Within each category, hooks run in the order they were registered.
+
+## Conditional Hooks
+
+Run hooks only under certain conditions:
+
+```typescript Conditional Hooks
+const conditionalHook = async (context) => {
+  // Only run for REST API calls
+  if (context.params.provider === 'rest') {
+    console.log('Called via REST')
+  }
+  
+  // Only run for authenticated users
+  if (context.params.user) {
+    console.log('Authenticated user:', context.params.user.id)
+  }
+  
+  // Only run for specific methods
+  if (context.method === 'create') {
+    context.data.createdAt = new Date()
+  }
+}
+```
+
+## Async Hook Registration
+
+You can register hooks as arrays for cleaner composition:
+
+```typescript Array-Based Hooks
+app.service('messages').hooks([
+  async (context, next) => {
+    console.log('First hook')
+    await next()
+  },
+  async (context, next) => {
+    console.log('Second hook')
+    await next()
+  }
+])
+```
+
+## Error Handling in Hooks
+
+Handle errors gracefully in your hooks:
+
+```typescript Error Handling
+import { GeneralError } from '@feathersjs/errors'
+
+app.hooks({
+  error: {
+    all: [
+      async (context) => {
+        // Log the error
+        console.error(`Error in ${context.path}.${context.method}:`, context.error)
+        
+        // Convert unknown errors to GeneralError
+        if (!context.error.code) {
+          context.error = new GeneralError(context.error.message)
+        }
+        
+        // Don't expose internal errors to clients
+        if (context.params.provider && context.error.code === 500) {
+          context.error.message = 'An internal error occurred'
+        }
+      }
+    ]
+  }
+})
+```
+
+## Complete Hook Example
+
+Here's a complete example with validation, authorization, and data transformation:
+
+```typescript Complete Example
+import { BadRequest, Forbidden, NotAuthenticated } from '@feathersjs/errors'
+
+// Validation
+const validateMessage = async (context) => {
+  const { data } = context
+  
+  if (!data.text?.trim()) {
+    throw new BadRequest('Message text is required')
+  }
+  
+  if (data.text.length > 500) {
+    throw new BadRequest('Message text too long')
+  }
+}
+
+// Authorization
+const requireAuth = async (context) => {
+  if (!context.params.user) {
+    throw new NotAuthenticated('Authentication required')
+  }
+}
+
+const requireOwner = async (context) => {
+  const message = await context.service.get(context.id)
+  if (message.userId !== context.params.user.id) {
+    throw new Forbidden('Not authorized')
+  }
+}
+
+// Data enrichment
+const addUserData = async (context) => {
+  context.data = {
+    ...context.data,
+    userId: context.params.user.id,
+    createdAt: new Date()
+  }
+}
+
+// Sanitization
+const sanitize = async (context) => {
+  context.data.text = context.data.text.trim()
+  delete context.data.id
+  delete context.data.userId
+}
+
+// Result transformation
+const removePassword = async (context) => {
+  if (context.result) {
+    const results = Array.isArray(context.result.data) 
+      ? context.result.data 
+      : [context.result]
+    
+    results.forEach(item => {
+      delete item.password
+    })
+  }
+}
+
+// Register all hooks
+app.service('messages').hooks({
+  before: {
+    all: [requireAuth],
+    create: [sanitize, validateMessage, addUserData],
+    patch: [sanitize, validateMessage, requireOwner],
+    remove: [requireOwner]
+  },
+  after: {
+    all: [removePassword]
+  },
+  error: {
+    all: [
+      async (context) => {
+        console.error('Error:', context.error)
+      }
+    ]
+  }
+})
+```

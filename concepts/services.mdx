@@ -1,0 +1,581 @@
+---
+title: Services
+description: Understand Feathers service architecture, methods, and how to build CRUD operations
+---
+
+Services are the heart of Feathers. They provide a uniform interface for accessing and manipulating data, whether from a database, API, or any other source.
+
+## Service Interface
+
+A Feathers service implements up to six standard methods:
+
+```typescript
+interface Service {
+  find(params?: Params): Promise<Result | Result[]>
+  get(id: Id, params?: Params): Promise<Result>
+  create(data: Data, params?: Params): Promise<Result>
+  update(id: Id, data: Data, params?: Params): Promise<Result>
+  patch(id: Id | null, data: Data, params?: Params): Promise<Result | Result[]>
+  remove(id: Id | null, params?: Params): Promise<Result | Result[]>
+}
+```
+
+<Note>
+Services are **not required** to implement all methods. Implement only what your use case needs.
+</Note>
+
+## Standard Methods
+
+### find(params)
+
+Retrieve multiple records, optionally filtered and paginated:
+
+```typescript service.ts:7-9
+const messagesService = {
+  async find(params) {
+    const { query = {} } = params
+    
+    // Return paginated results
+    return {
+      total: 100,
+      limit: 10,
+      skip: 0,
+      data: [
+        { id: 1, text: 'Hello' },
+        { id: 2, text: 'World' }
+      ]
+    }
+  }
+}
+
+app.use('messages', messagesService)
+
+// Usage
+const result = await app.service('messages').find({
+  query: {
+    $limit: 10,
+    $skip: 0,
+    read: false
+  }
+})
+```
+
+<Tabs>
+  <Tab title="Paginated">
+```typescript
+interface Paginated<T> {
+  total: number
+  limit: number
+  skip: number
+  data: T[]
+}
+
+const messagesService = {
+  async find(params) {
+    return {
+      total: 100,
+      limit: params.query?.$limit || 10,
+      skip: params.query?.$skip || 0,
+      data: await fetchMessages(params.query)
+    }
+  }
+}
+```
+  </Tab>
+  <Tab title="Non-Paginated">
+```typescript
+const messagesService = {
+  async find(params) {
+    // Return array directly
+    return [
+      { id: 1, text: 'Hello' },
+      { id: 2, text: 'World' }
+    ]
+  }
+}
+```
+  </Tab>
+</Tabs>
+
+### get(id, params)
+
+Retrieve a single record by its unique identifier:
+
+```typescript service.ts:9
+const usersService = {
+  async get(id, params) {
+    const user = await database.users.findById(id)
+    
+    if (!user) {
+      throw new NotFound(`User ${id} not found`)
+    }
+    
+    return user
+  }
+}
+
+app.use('users', usersService)
+
+// Usage
+const user = await app.service('users').get(123)
+```
+
+### create(data, params)
+
+Create one or more new records:
+
+```typescript service.ts:10
+const usersService = {
+  async create(data, params) {
+    // Single record
+    if (!Array.isArray(data)) {
+      const user = await database.users.insert(data)
+      return user
+    }
+    
+    // Multiple records
+    const users = await database.users.insertMany(data)
+    return users
+  }
+}
+
+// Usage - single
+const user = await app.service('users').create({
+  email: 'user@example.com',
+  name: 'John Doe'
+})
+
+// Usage - multiple
+const users = await app.service('users').create([
+  { email: 'user1@example.com', name: 'User 1' },
+  { email: 'user2@example.com', name: 'User 2' }
+])
+```
+
+<Warning>
+When creating multiple records, the service **must** return an array of created records.
+</Warning>
+
+### update(id, data, params)
+
+Replace a record entirely (PUT semantics):
+
+```typescript service.ts:11
+const usersService = {
+  async update(id, data, params) {
+    // All fields must be provided
+    const user = await database.users.replaceOne(id, data)
+    
+    if (!user) {
+      throw new NotFound(`User ${id} not found`)
+    }
+    
+    return user
+  }
+}
+
+// Usage
+const user = await app.service('users').update(123, {
+  email: 'newemail@example.com',
+  name: 'New Name',
+  // All other fields must be included
+})
+```
+
+### patch(id, data, params)
+
+Partially update one or multiple records:
+
+```typescript service.ts:12
+const usersService = {
+  async patch(id, data, params) {
+    // Single record
+    if (id !== null) {
+      const user = await database.users.updateOne(id, data)
+      return user
+    }
+    
+    // Multiple records (bulk update)
+    const users = await database.users.updateMany(params.query, data)
+    return users
+  }
+}
+
+// Usage - single
+const user = await app.service('users').patch(123, {
+  name: 'Updated Name' // Only update name
+})
+
+// Usage - bulk
+const users = await app.service('users').patch(null, 
+  { verified: true },
+  { query: { role: 'user' } }
+)
+```
+
+### remove(id, params)
+
+Delete one or multiple records:
+
+```typescript service.ts:13
+const usersService = {
+  async remove(id, params) {
+    // Single record
+    if (id !== null) {
+      const user = await database.users.deleteOne(id)
+      return user
+    }
+    
+    // Multiple records (bulk delete)
+    const users = await database.users.deleteMany(params.query)
+    return users
+  }
+}
+
+// Usage - single
+const deletedUser = await app.service('users').remove(123)
+
+// Usage - bulk
+const deletedUsers = await app.service('users').remove(null, {
+  query: { inactive: true }
+})
+```
+
+## Params Object
+
+The `params` parameter provides context for service method calls:
+
+```typescript declarations.ts:330-335
+interface Params {
+  query?: Query              // Query parameters
+  provider?: string          // 'rest', 'socketio', 'primus', or undefined
+  route?: { [key: string]: any }    // Route parameters
+  headers?: { [key: string]: any }  // HTTP headers
+  // ... any custom properties
+}
+```
+
+<CodeGroup>
+```typescript Query
+const result = await service.find({
+  query: {
+    $limit: 25,
+    $skip: 0,
+    status: 'active'
+  }
+})
+```
+
+```typescript Provider
+service.hooks({
+  before: {
+    all: [
+      async (context) => {
+        if (context.params.provider) {
+          // Called from external (REST, Socket.io)
+          console.log('External call via', context.params.provider)
+        } else {
+          // Called internally from server code
+          console.log('Internal call')
+        }
+      }
+    ]
+  }
+})
+```
+
+```typescript Custom Properties
+// Add custom properties
+const result = await service.find({
+  query: { status: 'active' },
+  user: currentUser,          // Custom
+  authenticated: true         // Custom
+})
+```
+</CodeGroup>
+
+## Custom Methods
+
+Define custom service methods beyond the standard CRUD operations:
+
+```typescript service.ts:15,26-28
+const usersService = {
+  async find(params) {
+    return []
+  },
+  
+  async get(id, params) {
+    return { id }
+  },
+  
+  // Custom method
+  async resetPassword(data, params) {
+    const { email } = data
+    const user = await this.findByEmail(email)
+    
+    // Send password reset email
+    await sendPasswordResetEmail(user)
+    
+    return { message: 'Password reset email sent' }
+  }
+}
+
+app.use('users', usersService, {
+  methods: ['find', 'get', 'resetPassword']
+})
+
+// Usage
+await app.service('users').resetPassword({ 
+  email: 'user@example.com' 
+})
+```
+
+<Note>
+Custom methods must be explicitly listed in the `methods` option to be available to external clients.
+</Note>
+
+## Protected Methods
+
+Certain method names are reserved and cannot be used as custom methods:
+
+```typescript service.ts:26-28
+// Reserved names
+const protected = [
+  'all', 'around', 'before', 'after', 'error',
+  'hooks', 'setup', 'teardown', 'publish',
+  // ... and all EventEmitter methods
+]
+```
+
+## Lifecycle Hooks
+
+### setup(app, path)
+
+Called when the application initializes:
+
+```typescript declarations.ts:91
+class UserService {
+  async setup(app, path) {
+    console.log(`Setting up ${path}`)
+    this.app = app
+    this.connection = await createDatabaseConnection()
+  }
+  
+  async find(params) {
+    return this.connection.query('SELECT * FROM users')
+  }
+}
+```
+
+### teardown(app, path)
+
+Called when the application shuts down:
+
+```typescript declarations.ts:93
+class UserService {
+  async teardown(app, path) {
+    console.log(`Tearing down ${path}`)
+    await this.connection.close()
+  }
+}
+```
+
+## Service Options
+
+Configure services with options:
+
+```typescript declarations.ts:26-44
+interface ServiceOptions {
+  events?: string[]           // Custom events to emit
+  methods?: string[]          // Available methods
+  serviceEvents?: string[]    // Complete event list
+  routeParams?: object        // Default route params
+}
+```
+
+<Tabs>
+  <Tab title="Methods">
+```typescript
+app.use('messages', messageService, {
+  methods: ['find', 'get', 'create', 'customMethod']
+})
+
+// Only these methods are available externally
+```
+  </Tab>
+  <Tab title="Events">
+```typescript
+app.use('users', userService, {
+  events: ['login', 'logout', 'passwordReset']
+})
+
+// Default events (created, updated, patched, removed) + custom events
+app.service('users').on('login', (data) => {
+  console.log('User logged in:', data)
+})
+```
+  </Tab>
+  <Tab title="Route Params">
+```typescript
+app.use('users/:userId/messages', messageService, {
+  routeParams: {
+    userId: 'userId'
+  }
+})
+
+// userId will be available in params.route
+```
+  </Tab>
+</Tabs>
+
+## Real-World Examples
+
+<CodeGroup>
+```typescript In-Memory Service
+class MemoryService {
+  constructor() {
+    this.store = new Map()
+    this.currentId = 0
+  }
+  
+  async find(params) {
+    const { query = {} } = params
+    const { $limit, $skip, ...filters } = query
+    
+    let items = Array.from(this.store.values())
+    
+    // Apply filters
+    Object.keys(filters).forEach(key => {
+      items = items.filter(item => item[key] === filters[key])
+    })
+    
+    const total = items.length
+    const skip = parseInt($skip) || 0
+    const limit = parseInt($limit) || 10
+    
+    items = items.slice(skip, skip + limit)
+    
+    return {
+      total,
+      limit,
+      skip,
+      data: items
+    }
+  }
+  
+  async get(id, params) {
+    const item = this.store.get(id)
+    if (!item) throw new NotFound(`Item ${id} not found`)
+    return item
+  }
+  
+  async create(data, params) {
+    const id = ++this.currentId
+    const item = { ...data, id }
+    this.store.set(id, item)
+    return item
+  }
+  
+  async patch(id, data, params) {
+    const item = await this.get(id, params)
+    const updated = { ...item, ...data }
+    this.store.set(id, updated)
+    return updated
+  }
+  
+  async remove(id, params) {
+    const item = await this.get(id, params)
+    this.store.delete(id)
+    return item
+  }
+}
+
+app.use('items', new MemoryService())
+```
+
+```typescript API Wrapper
+import fetch from 'node-fetch'
+
+class GitHubService {
+  constructor(token) {
+    this.token = token
+    this.baseURL = 'https://api.github.com'
+  }
+  
+  async find(params) {
+    const { query = {} } = params
+    const { owner, repo } = query
+    
+    const response = await fetch(
+      `${this.baseURL}/repos/${owner}/${repo}/issues`,
+      {
+        headers: {
+          'Authorization': `token ${this.token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      }
+    )
+    
+    return response.json()
+  }
+  
+  async get(id, params) {
+    const { owner, repo } = params.query
+    
+    const response = await fetch(
+      `${this.baseURL}/repos/${owner}/${repo}/issues/${id}`,
+      {
+        headers: {
+          'Authorization': `token ${this.token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      }
+    )
+    
+    return response.json()
+  }
+  
+  async create(data, params) {
+    const { owner, repo } = params.query
+    
+    const response = await fetch(
+      `${this.baseURL}/repos/${owner}/${repo}/issues`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${this.token}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(data)
+      }
+    )
+    
+    return response.json()
+  }
+}
+
+app.use('github/issues', new GitHubService(process.env.GITHUB_TOKEN))
+```
+</CodeGroup>
+
+## Best Practices
+
+1. **Validate input** - Always validate data in hooks before processing
+2. **Handle errors gracefully** - Throw appropriate Feathers errors
+3. **Return consistent shapes** - Keep response formats predictable
+4. **Use params for context** - Pass authentication, user info via params
+5. **Implement only needed methods** - Don't implement methods you don't use
+6. **Document custom methods** - Make it clear what custom methods do
+7. **Use TypeScript** - Type your services for better developer experience
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Hooks" icon="hook" href="/concepts/hooks">
+    Learn how to add middleware to service methods
+  </Card>
+  <Card title="Events" icon="broadcast-tower" href="/concepts/events">
+    Understand real-time events from services
+  </Card>
+</CardGroup>

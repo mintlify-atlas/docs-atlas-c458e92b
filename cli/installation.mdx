@@ -1,0 +1,209 @@
+---
+title: "CLI Installation"
+description: "Install and set up the Feathers CLI for generating applications and services"
+---
+
+The Feathers CLI can be installed globally or used directly with `npx`. We recommend using `npx` to always use the latest version.
+
+## Prerequisites
+
+Before installing the Feathers CLI, ensure you have:
+
+- **Node.js 14 or higher** - [Download Node.js](https://nodejs.org/)
+- **npm** or **yarn** - Comes with Node.js
+
+## Installation methods
+
+<Steps>
+<Step title="Use with npx (recommended)">
+  Run the CLI directly without installing:
+
+  ```bash
+  npx @feathersjs/cli --help
+  ```
+
+  This ensures you always use the latest version of the CLI.
+</Step>
+
+<Step title="Or install as dev dependency">
+  Install in your project:
+
+  <CodeGroup>
+  ```bash npm
+  npm install @feathersjs/cli --save-dev
+  ```
+
+  ```bash yarn
+  yarn add @feathersjs/cli --dev
+  ```
+
+  ```bash pnpm
+  pnpm add @feathersjs/cli --save-dev
+  ```
+  </CodeGroup>
+
+  Then run with:
+
+  ```bash
+  npx feathers --help
+  ```
+</Step>
+
+<Step title="Or install globally (optional)">
+  Install globally to use the `feathers` command anywhere:
+
+  <CodeGroup>
+  ```bash npm
+  npm install -g @feathersjs/cli
+  ```
+
+  ```bash yarn
+  yarn global add @feathersjs/cli
+  ```
+
+  ```bash pnpm
+  pnpm add -g @feathersjs/cli
+  ```
+  </CodeGroup>
+
+  Then run directly:
+
+  ```bash
+  feathers --help
+  ```
+</Step>
+</Steps>
+
+## Verify installation
+
+Check that the CLI is working:
+
+```bash
+npx @feathersjs/cli --version
+```
+
+You should see the version number (currently `5.0.41`).
+
+## Getting started with the CLI
+
+Once installed, you can start generating code:
+
+<Steps>
+<Step title="View available commands">
+  ```bash
+  npx feathers --help
+  ```
+
+  This shows all available commands and generators.
+</Step>
+
+<Step title="Generate a new application">
+  ```bash
+  npx feathers generate app
+  ```
+
+  The CLI will prompt you to configure your application:
+  - Application name
+  - Project description
+  - Framework (Express or Koa)
+  - Database type
+  - Schema format
+  - Authentication options
+</Step>
+
+<Step title="Generate a service">
+  Navigate to your app directory and generate a service:
+
+  ```bash
+  cd my-app
+  npx feathers generate service
+  ```
+
+  You'll be prompted for:
+  - Service name
+  - Service path
+  - Database adapter
+  - Schema definition
+</Step>
+</Steps>
+
+## Using the shorthand
+
+The CLI provides a convenient shorthand for generators:
+
+```bash
+# Instead of typing 'generate' every time
+npx feathers generate service
+
+# Use the shorthand 'g'
+npx feathers g service
+```
+
+## Command-line options
+
+Skip interactive prompts by providing options:
+
+<CodeGroup>
+```bash Generate app
+npx feathers generate app --name my-app
+```
+
+```bash Generate service
+npx feathers generate service --name users --path /users --type knex
+```
+
+```bash Generate hook
+npx feathers generate hook --name validateData --type around
+```
+</CodeGroup>
+
+Use `--help` with any command to see available options:
+
+```bash
+npx feathers generate service --help
+```
+
+## Troubleshooting
+
+### Node version error
+
+If you see an error about Node version, ensure you're running Node.js 14 or higher:
+
+```bash
+node --version
+```
+
+Upgrade Node.js if needed from [nodejs.org](https://nodejs.org/).
+
+### Permission errors (global install)
+
+If you encounter permission errors with global installation:
+
+- **On macOS/Linux**: Use `sudo` (not recommended) or [configure npm to install globally without sudo](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally)
+- **On Windows**: Run your terminal as Administrator
+- **Better solution**: Use `npx` instead of global installation
+
+### Command not found
+
+If `feathers` command is not found:
+
+- Use `npx @feathersjs/cli` instead
+- Or ensure the global installation directory is in your PATH
+- Or install as a local dev dependency and use `npx feathers`
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="CLI Overview" icon="terminal" href="/cli/overview">
+    Learn about available generators
+  </Card>
+  <Card title="Generate application" icon="wand-magic-sparkles" href="/guides/cli/application">
+    Create your first Feathers app
+  </Card>
+  <Card title="Generate service" icon="database" href="/guides/cli/service">
+    Add a service to your application
+  </Card>
+  <Card title="Configuration" icon="gear" href="/api/configuration">
+    Configure your Feathers application
+  </Card>
+</CardGroup>

@@ -1,0 +1,126 @@
+---
+title: "CLI Overview"
+description: "Introduction to the Feathers CLI and its code generation capabilities"
+---
+
+The Feathers CLI (`@feathersjs/cli`) is a command-line interface for generating and scaffolding Feathers applications. It provides interactive generators that create production-ready code following best practices.
+
+## What the CLI does
+
+The Feathers CLI helps you:
+
+- **Generate new applications** - Create a complete Feathers application with your choice of framework (Express or Koa), database, authentication, and more
+- **Add services** - Generate new services with database adapters (Knex, MongoDB, or custom)
+- **Create hooks** - Scaffold hooks for your application logic
+- **Set up authentication** - Add authentication with local and OAuth strategies
+- **Configure databases** - Add database connections to your application
+
+## Available generators
+
+The CLI includes the following generators:
+
+<CodeGroup>
+```bash Generate app
+feathers generate app
+```
+
+```bash Generate service
+feathers generate service
+```
+
+```bash Generate hook
+feathers generate hook
+```
+
+```bash Add authentication
+feathers generate authentication
+```
+
+```bash Add database connection
+feathers generate connection
+```
+</CodeGroup>
+
+All generators can be run interactively or with command-line options.
+
+## Interactive generators
+
+The Feathers CLI uses interactive prompts to guide you through the generation process. Each generator asks relevant questions and creates the appropriate files and configuration.
+
+```bash
+# Run any generator to see interactive prompts
+npx feathers generate service
+```
+
+You'll be prompted for:
+- Service name and path
+- Database adapter type
+- Schema definition
+- And more
+
+## Command aliases
+
+The CLI supports shorthand aliases for common commands:
+
+| Full command | Alias |
+|--------------|-------|
+| `feathers generate` | `feathers g` |
+| `feathers generate app` | `feathers g app` |
+| `feathers generate service` | `feathers g service` |
+
+## Generator options
+
+Generators support command-line options to skip interactive prompts:
+
+<CodeGroup>
+```bash Service with options
+feathers generate service --name users --path /users --type knex
+```
+
+```bash Hook with options
+feathers generate hook --name validateUser --type around
+```
+
+```bash App with options
+feathers generate app --name my-app
+```
+</CodeGroup>
+
+## Help and version
+
+View help for any command:
+
+```bash
+# General help
+feathers --help
+
+# Generator-specific help
+feathers generate --help
+feathers generate service --help
+```
+
+Check the CLI version:
+
+```bash
+feathers --version
+```
+
+## Generated code structure
+
+The CLI generates TypeScript code following Feathers best practices:
+
+- **Type-safe** - Full TypeScript support with proper types
+- **Schema-first** - Uses TypeBox or JSON Schema for validation
+- **Modular** - Clean separation of concerns
+- **Production-ready** - Includes error handling, logging, and configuration
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/cli/installation">
+    Install the Feathers CLI
+  </Card>
+  <Card title="Generate app" icon="wand-magic-sparkles" href="/guides/cli/application">
+    Create your first Feathers application
+  </Card>
+</CardGroup>

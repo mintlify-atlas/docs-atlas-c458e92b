@@ -1,0 +1,520 @@
+---
+title: Hooks API
+description: Complete API reference for Feathers hooks
+---
+
+Hooks are pluggable middleware functions that can be registered before, after, or on error of a service method. They allow you to implement cross-cutting concerns like validation, authorization, logging, and data transformation in a composable way.
+
+## Hook Types
+
+Feathers supports four types of hooks:
+
+- **around** - Wraps around a method call, with full control via `next()`
+- **before** - Runs before a service method
+- **after** - Runs after a successful service method call
+- **error** - Runs when an error occurs in a service method
+
+## Hook Context
+
+All hooks receive a `context` object with information about the service call:
+
+```typescript
+interface HookContext<A = Application, S = any> {
+  readonly app: A
+  readonly service: S
+  readonly path: string
+  readonly method: string
+  readonly type: HookType
+  readonly arguments: any[]
+  params: ServiceGenericParams<S>
+  id?: Id
+  data?: ServiceGenericData<S>
+  result?: ServiceGenericType<S>
+  dispatch?: ServiceGenericType<S>
+  error?: any
+  event: string | null
+  statusCode?: number
+  http?: Http
+}
+```
+
+### Context Properties
+
+<ParamField path="app" type="Application" readonly>
+  The Feathers application object
+</ParamField>
+
+<ParamField path="service" type="Service" readonly>
+  The service this hook currently runs on
+</ParamField>
+
+<ParamField path="path" type="string" readonly>
+  The service path without leading or trailing slashes
+</ParamField>
+
+<ParamField path="method" type="string" readonly>
+  The name of the service method (e.g., `'find'`, `'create'`)
+</ParamField>
+
+<ParamField path="type" type="'before' | 'after' | 'error' | 'around'" readonly>
+  The hook type
+</ParamField>
+
+<ParamField path="arguments" type="any[]" readonly>
+  The list of method arguments. Should not be modified directly.
+</ParamField>
+
+<ParamField path="params" type="Params">
+  Service method parameters (including `params.query`). Can be modified.
+</ParamField>
+
+<ParamField path="id" type="Id" optional>
+  The id for `get`, `update`, `patch`, and `remove` calls. Can be `null` for multi-operations.
+</ParamField>
+
+<ParamField path="data" type="any" optional>
+  The data for `create`, `update`, and `patch` calls. Can be modified.
+</ParamField>
+
+<ParamField path="result" type="any" optional>
+  The result of the service method call. Available in `after` hooks. Setting `result` in a `before` hook skips the actual method call.
+</ParamField>
+
+<ParamField path="dispatch" type="any" optional>
+  A 'safe' version of data to send to clients. If not set, `result` is sent instead.
+</ParamField>
+
+<ParamField path="error" type="Error" optional>
+  The error object thrown. Only available in `error` hooks.
+</ParamField>
+
+<ParamField path="event" type="string | null">
+  The event to emit. Set to `null` to skip event emitting.
+</ParamField>
+
+<ParamField path="statusCode" type="number" optional>
+  HTTP status code override (deprecated, use `http.status` instead)
+</ParamField>
+
+<ParamField path="http" type="Http" optional>
+  HTTP-specific options including status code, headers, and location
+</ParamField>
+
+## Registering Hooks
+
+### Service Hooks
+
+Register hooks on a specific service using the `.hooks()` method:
+
+```typescript
+service.hooks({
+  before: {
+    all: [hook1],
+    find: [hook2],
+    get: [hook3],
+    create: [hook4, hook5],
+    update: [hook6],
+    patch: [hook7],
+    remove: [hook8]
+  },
+  after: {
+    all: [hook9],
+    find: [hook10]
+  },
+  error: {
+    all: [errorHook]
+  },
+  around: {
+    all: [aroundHook]
+  }
+})
+```
+
+### Application Hooks
+
+Register hooks that run for all services:
+
+```typescript
+app.hooks({
+  before: {
+    all: [authenticate('jwt')]
+  },
+  error: {
+    all: [logError]
+  }
+})
+```
+
+### Setup/Teardown Hooks
+
+Register hooks for application lifecycle:
+
+```typescript
+app.hooks({
+  setup: [initializeDatabase],
+  teardown: [closeConnections]
+})
+```
+
+## Hook Functions
+
+### Before/After/Error Hooks
+
+Regular hooks receive the context and can modify it:
+
+```typescript
+type HookFunction<A = Application, S = Service> = (
+  context: HookContext<A, S>
+) => Promise<HookContext | void> | HookContext | void
+```
+
+```typescript
+const validateUser = async (context) => {
+  const { data } = context
+  
+  if (!data.email) {
+    throw new Error('Email is required')
+  }
+  
+  if (!data.email.includes('@')) {
+    throw new Error('Invalid email format')
+  }
+  
+  // Return context or void
+  return context
+}
+
+app.service('users').hooks({
+  before: {
+    create: [validateUser]
+  }
+})
+```
+
+### Around Hooks
+
+Around hooks wrap the method call and must call `next()` to continue:
+
+```typescript
+type AroundHookFunction<A = Application, S = Service> = (
+  context: HookContext<A, S>,
+  next: NextFunction
+) => Promise<void>
+```
+
+```typescript
+const logExecutionTime = async (context, next) => {
+  const start = Date.now()
+  
+  await next()
+  
+  const duration = Date.now() - start
+  console.log(`${context.method} took ${duration}ms`)
+}
+
+app.service('users').hooks({
+  around: {
+    all: [logExecutionTime]
+  }
+})
+```
+
+## Common Hook Patterns
+
+### Validation
+
+```typescript
+const validateEmail = async (context) => {
+  const { data } = context
+  
+  if (!data.email?.match(/^[^@]+@[^@]+$/)) {
+    throw new Error('Invalid email address')
+  }
+}
+
+service.hooks({
+  before: {
+    create: [validateEmail],
+    update: [validateEmail],
+    patch: [validateEmail]
+  }
+})
+```
+
+### Authentication & Authorization
+
+```typescript
+const requireAuth = async (context) => {
+  if (!context.params.user) {
+    throw new Error('Not authenticated')
+  }
+}
+
+const requireRole = (role) => async (context) => {
+  const { user } = context.params
+  
+  if (!user.roles.includes(role)) {
+    throw new Error('Insufficient permissions')
+  }
+}
+
+service.hooks({
+  before: {
+    all: [requireAuth],
+    remove: [requireRole('admin')]
+  }
+})
+```
+
+### Data Transformation
+
+```typescript
+const hashPassword = async (context) => {
+  if (context.data.password) {
+    context.data.password = await bcrypt.hash(context.data.password, 10)
+  }
+}
+
+const removePassword = async (context) => {
+  if (context.result) {
+    delete context.result.password
+  }
+}
+
+service.hooks({
+  before: {
+    create: [hashPassword],
+    update: [hashPassword],
+    patch: [hashPassword]
+  },
+  after: {
+    all: [removePassword]
+  }
+})
+```
+
+### Query Modification
+
+```typescript
+const filterByUser = async (context) => {
+  const { user } = context.params
+  
+  // Only show user's own data
+  context.params.query = {
+    ...context.params.query,
+    userId: user.id
+  }
+}
+
+service.hooks({
+  before: {
+    find: [filterByUser],
+    get: [filterByUser]
+  }
+})
+```
+
+### Logging
+
+```typescript
+const logServiceCall = async (context, next) => {
+  console.log(`Calling ${context.path}.${context.method}`)
+  
+  await next()
+  
+  console.log(`Called ${context.path}.${context.method}`)
+}
+
+app.hooks({
+  around: {
+    all: [logServiceCall]
+  }
+})
+```
+
+### Error Handling
+
+```typescript
+const handleError = async (context) => {
+  const { error } = context
+  
+  console.error(`Error in ${context.path}.${context.method}:`, error)
+  
+  // Transform error for client
+  if (error.code === 'VALIDATION_ERROR') {
+    context.error = new BadRequest('Validation failed', {
+      errors: error.details
+    })
+  }
+}
+
+app.hooks({
+  error: {
+    all: [handleError]
+  }
+})
+```
+
+### Caching
+
+```typescript
+const cache = new Map()
+
+const checkCache = async (context, next) => {
+  const { method, id, params } = context
+  const key = `${method}-${id}-${JSON.stringify(params.query)}`
+  
+  // Check cache before method call
+  if (cache.has(key)) {
+    context.result = cache.get(key)
+    return // Skip method call
+  }
+  
+  await next()
+  
+  // Cache result after method call
+  if (context.result) {
+    cache.set(key, context.result)
+  }
+}
+
+service.hooks({
+  around: {
+    find: [checkCache],
+    get: [checkCache]
+  }
+})
+```
+
+### Pagination
+
+```typescript
+const setPagination = async (context) => {
+  context.params.paginate = {
+    default: 10,
+    max: 50
+  }
+}
+
+service.hooks({
+  before: {
+    find: [setPagination]
+  }
+})
+```
+
+### Skip Method Call
+
+Setting `context.result` in a before hook skips the actual service method:
+
+```typescript
+const useCache = async (context) => {
+  const cached = await cache.get(context.id)
+  
+  if (cached) {
+    // Setting result skips the database call
+    context.result = cached
+  }
+}
+
+service.hooks({
+  before: {
+    get: [useCache]
+  }
+})
+```
+
+## Hook Registration Formats
+
+Hooks can be registered in multiple formats:
+
+### Object Format
+
+```typescript
+service.hooks({
+  before: {
+    all: [hook1],
+    create: [hook2]
+  },
+  after: {
+    all: [hook3]
+  }
+})
+```
+
+### Array Format (Around Hooks)
+
+```typescript
+service.hooks([
+  async (context, next) => {
+    await next()
+  }
+])
+```
+
+### Method-Specific Format
+
+```typescript
+service.hooks({
+  create: [hook1, hook2],
+  update: [hook3]
+})
+```
+
+## Helper Functions
+
+### createContext()
+
+Create a hook context programmatically:
+
+```typescript
+import { createContext } from '@feathersjs/feathers'
+
+const context = createContext(service, 'create', {
+  data: { name: 'Test' },
+  params: {}
+})
+```
+
+<ParamField path="service" type="Service" required>
+  The service instance
+</ParamField>
+
+<ParamField path="method" type="string" required>
+  The method name
+</ParamField>
+
+<ParamField path="data" type="object" optional>
+  Initial context data
+</ParamField>
+
+<ResponseField name="context" type="HookContext">
+  The created hook context
+</ResponseField>
+
+## Type Definitions
+
+```typescript
+type HookType = 'before' | 'after' | 'error' | 'around'
+
+type HookFunction<A = Application, S = Service> = (
+  context: HookContext<A, S>
+) => Promise<HookContext | void> | HookContext | void
+
+type AroundHookFunction<A = Application, S = Service> = (
+  context: HookContext<A, S>,
+  next: NextFunction
+) => Promise<void>
+
+type HookMap<A, S> = {
+  around?: AroundHookMap<A, S>
+  before?: HookTypeMap<A, S>
+  after?: HookTypeMap<A, S>
+  error?: HookTypeMap<A, S>
+}
+
+type HookOptions<A, S> = 
+  | AroundHookMap<A, S> 
+  | AroundHookFunction<A, S>[] 
+  | HookMap<A, S>
+```

@@ -1,0 +1,553 @@
+---
+title: Client Authentication API
+description: Complete API reference for @feathersjs/authentication-client for client-side authentication
+---
+
+The `@feathersjs/authentication-client` package provides client-side authentication for Feathers applications, handling JWT storage, authentication state, and automatic token management.
+
+## Installation
+
+```bash
+npm install @feathersjs/authentication-client
+```
+
+## Setup
+
+Initialize the authentication client plugin:
+
+```typescript
+import authClient from '@feathersjs/authentication-client'
+
+app.configure(authClient(options))
+```
+
+### Options
+
+```typescript
+interface AuthenticationClientOptions {
+  storage?: Storage
+  header?: string
+  scheme?: string
+  storageKey?: string
+  locationKey?: string
+  locationErrorKey?: string
+  jwtStrategy?: string
+  path?: string
+  Authentication?: ClientConstructor
+}
+```
+
+<ParamField path="storage" type="Storage" default="localStorage or MemoryStorage">
+  Storage backend for storing the JWT. Defaults to `window.localStorage` in browsers, `MemoryStorage` otherwise
+</ParamField>
+
+<ParamField path="header" type="string" default="Authorization">
+  The HTTP header name for sending the JWT
+</ParamField>
+
+<ParamField path="scheme" type="string" default="Bearer">
+  The HTTP authentication scheme
+</ParamField>
+
+<ParamField path="storageKey" type="string" default="feathers-jwt">
+  The key name for storing the JWT in storage
+</ParamField>
+
+<ParamField path="locationKey" type="string" default="access_token">
+  The key name for getting the JWT from the window location hash
+</ParamField>
+
+<ParamField path="locationErrorKey" type="string" default="error">
+  The key name for getting errors from the window location hash
+</ParamField>
+
+<ParamField path="jwtStrategy" type="string" default="jwt">
+  The name of the JWT authentication strategy
+</ParamField>
+
+<ParamField path="path" type="string" default="/authentication">
+  The path of the authentication service
+</ParamField>
+
+**Example:**
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import authClient from '@feathersjs/authentication-client'
+
+const app = feathers()
+
+app.configure(authClient({
+  storage: window.localStorage,
+  storageKey: 'my-app-jwt'
+}))
+```
+
+## AuthenticationClient
+
+The main authentication client class. After configuration, the methods are available directly on the app instance.
+
+### authenticate
+
+Authenticate with the server using a specific strategy.
+
+```typescript
+app.authenticate(authentication?: AuthenticationRequest, params?: Params): Promise<AuthenticationResult>
+```
+
+<ParamField path="authentication" type="AuthenticationRequest">
+  The authentication data. If not provided, will attempt reauthentication with stored token
+  
+  ```typescript
+  interface AuthenticationRequest {
+    strategy?: string
+    [key: string]: any
+  }
+  ```
+</ParamField>
+
+<ParamField path="params" type="Params">
+  Additional service call parameters
+</ParamField>
+
+<ResponseField name="accessToken" type="string">
+  The JWT access token
+</ResponseField>
+
+<ResponseField name="authentication" type="object">
+  Authentication metadata including strategy and payload
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  The authenticated user/entity object
+</ResponseField>
+
+**Examples:**
+
+```typescript
+// Authenticate with local strategy
+const result = await app.authenticate({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'secret'
+})
+
+console.log(result.accessToken)
+console.log(result.user)
+
+// Reauthenticate with stored token
+try {
+  await app.authenticate()
+  console.log('Already authenticated')
+} catch (error) {
+  console.log('Need to login')
+}
+
+// Authenticate with OAuth token
+const result = await app.authenticate({
+  strategy: 'jwt',
+  accessToken: 'existing-token'
+})
+```
+
+### reAuthenticate
+
+Try to reauthenticate using the token from storage. Does nothing if already authenticated unless `force` is true.
+
+```typescript
+app.reAuthenticate(
+  force?: boolean,
+  strategy?: string,
+  authParams?: Params
+): Promise<AuthenticationResult>
+```
+
+<ParamField path="force" type="boolean" default="false">
+  Force reauthentication with the server even if already authenticated
+</ParamField>
+
+<ParamField path="strategy" type="string">
+  The name of the strategy to use. Defaults to `options.jwtStrategy`
+</ParamField>
+
+<ParamField path="authParams" type="Params">
+  Additional authentication parameters
+</ParamField>
+
+**Example:**
+
+```typescript
+// Try to reauthenticate on app startup
+app.reAuthenticate()
+  .then(result => {
+    console.log('Authenticated', result.user)
+  })
+  .catch(() => {
+    console.log('Not authenticated')
+  })
+
+// Force reauthentication
+await app.reAuthenticate(true)
+```
+
+### logout
+
+Log out the current user and remove their token.
+
+```typescript
+app.logout(): Promise<AuthenticationResult | null>
+```
+
+**Example:**
+
+```typescript
+await app.logout()
+console.log('User logged out')
+```
+
+### Token Management
+
+#### getAccessToken
+
+Get the access token from storage or window location hash.
+
+```typescript
+app.authentication.getAccessToken(): Promise<string | null>
+```
+
+**Example:**
+
+```typescript
+const token = await app.authentication.getAccessToken()
+if (token) {
+  console.log('Token found:', token)
+}
+```
+
+#### setAccessToken
+
+Set the access token in storage.
+
+```typescript
+app.authentication.setAccessToken(accessToken: string): Promise<string>
+```
+
+<ParamField path="accessToken" type="string" required>
+  The access token to store
+</ParamField>
+
+**Example:**
+
+```typescript
+await app.authentication.setAccessToken('new-token')
+```
+
+#### removeAccessToken
+
+Remove the access token from storage.
+
+```typescript
+app.authentication.removeAccessToken(): Promise<string>
+```
+
+**Example:**
+
+```typescript
+await app.authentication.removeAccessToken()
+```
+
+### Properties
+
+#### authenticated
+
+Indicates whether the client is currently authenticated.
+
+```typescript
+app.authentication.authenticated: boolean
+```
+
+**Example:**
+
+```typescript
+if (app.authentication.authenticated) {
+  console.log('User is authenticated')
+}
+```
+
+#### storage
+
+Access to the storage backend.
+
+```typescript
+app.authentication.storage: Storage
+```
+
+## Events
+
+The authentication client emits events on the app instance:
+
+### login
+
+Emitted after successful authentication.
+
+```typescript
+app.on('login', (authResult) => {
+  console.log('Logged in', authResult.user)
+})
+```
+
+### authenticated
+
+Emitted after successful authentication (same as login).
+
+```typescript
+app.on('authenticated', (authResult) => {
+  console.log('Authenticated', authResult.user)
+})
+```
+
+### logout
+
+Emitted after logout.
+
+```typescript
+app.on('logout', (authResult) => {
+  console.log('Logged out')
+})
+```
+
+## Hooks
+
+### authentication
+
+Automatically adds authentication information to service calls.
+
+```typescript
+import { hooks } from '@feathersjs/authentication-client'
+
+app.hooks([hooks.authentication()])
+```
+
+This hook is automatically added when you configure the authentication client.
+
+### populateHeader
+
+Automatically populates the Authorization header with the JWT for external requests.
+
+```typescript
+import { hooks } from '@feathersjs/authentication-client'
+
+app.hooks([hooks.populateHeader()])
+```
+
+This hook is automatically added when you configure the authentication client.
+
+## Storage
+
+The authentication client uses a storage interface for persisting JWTs.
+
+### Storage Interface
+
+```typescript
+interface Storage {
+  getItem(key: string): Promise<string | null>
+  setItem(key: string, value: string): Promise<string>
+  removeItem(key: string): Promise<string>
+}
+```
+
+### Built-in Storage
+
+#### Default Storage
+
+Automatically uses `localStorage` in browsers, falls back to `MemoryStorage`.
+
+```typescript
+import { defaultStorage } from '@feathersjs/authentication-client'
+
+app.configure(authClient({ storage: defaultStorage }))
+```
+
+#### MemoryStorage
+
+In-memory storage for environments without localStorage.
+
+```typescript
+import { MemoryStorage } from '@feathersjs/authentication-client'
+
+app.configure(authClient({ storage: new MemoryStorage() }))
+```
+
+### Custom Storage
+
+Implement the Storage interface for custom storage backends:
+
+```typescript
+class CustomStorage {
+  async getItem(key) {
+    // Retrieve from custom storage
+    return myStorage.get(key)
+  }
+
+  async setItem(key, value) {
+    // Store in custom storage
+    return myStorage.set(key, value)
+  }
+
+  async removeItem(key) {
+    // Remove from custom storage
+    return myStorage.delete(key)
+  }
+}
+
+app.configure(authClient({ storage: new CustomStorage() }))
+```
+
+## Complete Example
+
+### Browser Application
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio-client'
+import io from 'socket.io-client'
+import authClient from '@feathersjs/authentication-client'
+
+const socket = io('http://localhost:3030')
+const app = feathers()
+
+app.configure(socketio(socket))
+app.configure(authClient({
+  storage: window.localStorage
+}))
+
+// Try to authenticate on startup
+app.reAuthenticate()
+  .then(result => {
+    console.log('Already authenticated', result.user)
+  })
+  .catch(() => {
+    console.log('Not authenticated')
+  })
+
+// Login form handler
+const loginForm = document.getElementById('login-form')
+loginForm.addEventListener('submit', async (e) => {
+  e.preventDefault()
+  
+  try {
+    const result = await app.authenticate({
+      strategy: 'local',
+      email: e.target.email.value,
+      password: e.target.password.value
+    })
+    
+    console.log('Logged in', result.user)
+  } catch (error) {
+    console.error('Login failed', error)
+  }
+})
+
+// Logout button handler
+const logoutButton = document.getElementById('logout-button')
+logoutButton.addEventListener('click', async () => {
+  await app.logout()
+  console.log('Logged out')
+})
+
+// Listen for authentication events
+app.on('login', result => {
+  console.log('Login event', result.user)
+})
+
+app.on('logout', () => {
+  console.log('Logout event')
+})
+```
+
+### React Example
+
+```typescript
+import React, { useState, useEffect } from 'react'
+import app from './feathers-client'
+
+function App() {
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    // Try to reauthenticate on mount
+    app.reAuthenticate()
+      .then(result => setUser(result.user))
+      .catch(() => setUser(null))
+      .finally(() => setLoading(false))
+
+    // Listen for login/logout events
+    app.on('login', result => setUser(result.user))
+    app.on('logout', () => setUser(null))
+  }, [])
+
+  const handleLogin = async (email, password) => {
+    try {
+      const result = await app.authenticate({
+        strategy: 'local',
+        email,
+        password
+      })
+      setUser(result.user)
+    } catch (error) {
+      console.error('Login failed', error)
+    }
+  }
+
+  const handleLogout = async () => {
+    await app.logout()
+    setUser(null)
+  }
+
+  if (loading) return <div>Loading...</div>
+
+  return (
+    <div>
+      {user ? (
+        <div>
+          <p>Welcome, {user.email}</p>
+          <button onClick={handleLogout}>Logout</button>
+        </div>
+      ) : (
+        <LoginForm onSubmit={handleLogin} />
+      )}
+    </div>
+  )
+}
+```
+
+### Node.js Client
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import socketio from '@feathersjs/socketio-client'
+import io from 'socket.io-client'
+import authClient, { MemoryStorage } from '@feathersjs/authentication-client'
+
+const socket = io('http://localhost:3030')
+const app = feathers()
+
+app.configure(socketio(socket))
+app.configure(authClient({
+  storage: new MemoryStorage()
+}))
+
+// Authenticate
+const result = await app.authenticate({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'secret'
+})
+
+console.log('Authenticated', result.user)
+
+// Make authenticated requests
+const messages = await app.service('messages').find()
+console.log(messages)
+```

@@ -1,0 +1,499 @@
+---
+title: Creating and Using Services
+description: Learn how to create, register, and use services in Feathers with service methods, options, and database adapters
+---
+
+## What are Services?
+
+Services are the core building blocks of a Feathers application. A service is simply an object or class that implements one or more of the standard service methods for CRUD operations.
+
+### Service Methods
+
+Feathers services can implement the following standard methods:
+
+- `find(params)` - Retrieve multiple records
+- `get(id, params)` - Retrieve a single record by ID
+- `create(data, params)` - Create one or more records
+- `update(id, data, params)` - Replace a record
+- `patch(id, data, params)` - Merge data into a record
+- `remove(id, params)` - Remove a record
+
+## Creating a Basic Service
+
+The simplest way to create a service is with an object that implements service methods:
+
+<CodeGroup>
+```typescript Simple Service
+const messageService = {
+  async find(params) {
+    return [
+      { id: 1, text: 'Hello' },
+      { id: 2, text: 'World' }
+    ]
+  },
+  
+  async get(id, params) {
+    return {
+      id,
+      text: `Message ${id}`
+    }
+  },
+  
+  async create(data, params) {
+    return {
+      id: Date.now(),
+      ...data
+    }
+  },
+  
+  async patch(id, data, params) {
+    return {
+      id,
+      ...data,
+      updatedAt: new Date()
+    }
+  },
+  
+  async remove(id, params) {
+    return { id, deleted: true }
+  }
+}
+
+app.use('/messages', messageService)
+```
+
+```typescript Class-Based Service
+class UserService {
+  async find(params) {
+    return []
+  }
+  
+  async get(id, params) {
+    return { id, email: `user${id}@example.com` }
+  }
+  
+  async create(data, params) {
+    return {
+      id: Date.now(),
+      ...data,
+      createdAt: new Date()
+    }
+  }
+  
+  async update(id, data, params) {
+    return {
+      id,
+      ...data
+    }
+  }
+  
+  async patch(id, data, params) {
+    return {
+      id,
+      ...data
+    }
+  }
+  
+  async remove(id, params) {
+    return { id }
+  }
+}
+
+app.use('/users', new UserService())
+```
+</CodeGroup>
+
+<Note>
+  Service methods must be `async` or return a Promise. Synchronous methods are not supported.
+</Note>
+
+## Registering Services
+
+Register services with your application using the `app.use()` method:
+
+<Steps>
+  <Step title="Choose a Path">
+    The first argument is the service path - this will be the endpoint for your service:
+    
+    ```typescript
+    app.use('/users', userService)
+    app.use('/api/messages', messageService)
+    app.use('/', rootService)  // Root-level service
+    ```
+  </Step>
+  
+  <Step title="Provide the Service">
+    The second argument is your service object or class instance:
+    
+    ```typescript
+    // Object
+    app.use('/messages', messageService)
+    
+    // Class instance
+    app.use('/users', new UserService())
+    ```
+  </Step>
+  
+  <Step title="Add Service Options (Optional)">
+    The third argument allows you to configure service behavior:
+    
+    ```typescript
+    app.use('/messages', messageService, {
+      methods: ['find', 'get', 'create'],  // Limit available methods
+      events: ['customEvent'],              // Add custom events
+      serviceEvents: []                     // Override default events
+    })
+    ```
+  </Step>
+</Steps>
+
+## Accessing Services
+
+Once registered, access services using `app.service()`:
+
+```typescript Accessing Services
+// Get service instance
+const userService = app.service('users')
+
+// Call service methods
+const users = await app.service('users').find()
+const user = await app.service('users').get(1)
+const newUser = await app.service('users').create({
+  email: 'test@example.com',
+  password: 'secret'
+})
+
+// Slashes are stripped automatically
+app.service('/users/')    // Same as app.service('users')
+app.service('users')      // Same as app.service('/users')
+```
+
+## Service Parameters
+
+All service methods receive a `params` object as their last argument. This object can contain:
+
+- `query` - Query parameters for filtering, sorting, pagination
+- `user` - The authenticated user (if using authentication)
+- `provider` - The transport used (rest, socketio, etc.)
+- Custom properties added by hooks or middleware
+
+```typescript Using Parameters
+const messageService = {
+  async find(params) {
+    const { query, user, provider } = params
+    
+    console.log('Query:', query)           // { $limit: 10, status: 'active' }
+    console.log('User:', user)             // { id: 1, email: '...' }
+    console.log('Provider:', provider)     // 'rest' or 'socketio'
+    
+    // Use query to filter results
+    return messages.filter(msg => {
+      if (query.status) {
+        return msg.status === query.status
+      }
+      return true
+    })
+  },
+  
+  async create(data, params) {
+    // Add the authenticated user's ID
+    return {
+      ...data,
+      userId: params.user?.id,
+      createdAt: new Date()
+    }
+  }
+}
+```
+
+## Memory Service
+
+Feathers provides a built-in in-memory service adapter for prototyping and testing:
+
+```typescript Memory Service
+import { memory } from '@feathersjs/memory'
+
+// Create an in-memory service
+const messageService = memory({
+  id: 'id',          // The property to use as the ID
+  startId: 1,        // Starting ID for auto-increment
+  store: {},         // Initial data store
+  paginate: {        // Enable pagination
+    default: 10,
+    max: 50
+  }
+})
+
+app.use('/messages', messageService)
+
+// Use the service
+const message = await app.service('messages').create({
+  text: 'Hello World'
+})
+
+const messages = await app.service('messages').find({
+  query: {
+    text: { $ne: null },
+    $limit: 10,
+    $sort: { createdAt: -1 }
+  }
+})
+```
+
+## Database Adapters
+
+Feathers provides adapters for popular databases that implement all service methods:
+
+<CodeGroup>
+```typescript MongoDB
+import { MongoDBService } from '@feathersjs/mongodb'
+import { MongoClient } from 'mongodb'
+
+const client = await MongoClient.connect('mongodb://localhost:27017')
+const database = client.db('myapp')
+
+app.use('/users', new MongoDBService({
+  Model: database.collection('users'),
+  paginate: {
+    default: 10,
+    max: 50
+  }
+}))
+```
+
+```typescript Knex (SQL)
+import { KnexService } from '@feathersjs/knex'
+import knex from 'knex'
+
+const db = knex({
+  client: 'postgresql',
+  connection: {
+    host: 'localhost',
+    database: 'myapp',
+    user: 'postgres',
+    password: 'secret'
+  }
+})
+
+app.use('/users', new KnexService({
+  Model: db,
+  name: 'users',
+  paginate: {
+    default: 10,
+    max: 50
+  }
+}))
+```
+
+```typescript Memory
+import { MemoryService } from '@feathersjs/memory'
+
+app.use('/messages', new MemoryService({
+  id: 'id',
+  startId: 1,
+  paginate: {
+    default: 10,
+    max: 50
+  }
+}))
+```
+</CodeGroup>
+
+## Service Options
+
+When registering a service, you can configure its behavior with options:
+
+```typescript Service Options
+app.use('/messages', messageService, {
+  // Specify which methods are available
+  methods: ['find', 'get', 'create', 'patch'],
+  
+  // Add custom events beyond the defaults
+  events: ['typing', 'seen'],
+  
+  // Override all service events
+  serviceEvents: ['created', 'customEvent']
+})
+```
+
+### Default Service Events
+
+By default, services emit events for data-modifying operations:
+
+- `created` - After `create()`
+- `updated` - After `update()`
+- `patched` - After `patch()`
+- `removed` - After `remove()`
+
+```typescript Listening to Service Events
+app.service('messages').on('created', (message) => {
+  console.log('New message:', message)
+})
+
+app.service('users').on('patched', (user) => {
+  console.log('User updated:', user)
+})
+```
+
+## Custom Service Methods
+
+You can add custom methods to your services beyond the standard CRUD operations:
+
+```typescript Custom Methods
+class MessageService {
+  async find(params) {
+    return []
+  }
+  
+  async get(id, params) {
+    return { id }
+  }
+  
+  async create(data, params) {
+    return data
+  }
+  
+  // Custom method
+  async sendNotification(messageId, params) {
+    const message = await this.get(messageId, params)
+    // Send notification logic
+    return { sent: true, messageId }
+  }
+}
+
+app.use('/messages', new MessageService(), {
+  methods: ['find', 'get', 'create', 'sendNotification']
+})
+
+// Use custom method
+await app.service('messages').sendNotification(123, {})
+```
+
+<Warning>
+  Custom methods cannot use protected names like `setup`, `teardown`, `hooks`, `on`, `emit`, or any `EventEmitter` method names.
+</Warning>
+
+## Service Lifecycle
+
+Services can implement `setup()` and `teardown()` lifecycle methods:
+
+```typescript Service Lifecycle
+class UserService {
+  connection = null
+  
+  async setup(app, path) {
+    console.log(`Setting up service at ${path}`)
+    this.connection = await connectToDatabase()
+  }
+  
+  async teardown(app, path) {
+    console.log(`Tearing down service at ${path}`)
+    await this.connection?.close()
+  }
+  
+  async find(params) {
+    return this.connection.query('SELECT * FROM users')
+  }
+  
+  async get(id, params) {
+    return this.connection.query('SELECT * FROM users WHERE id = ?', [id])
+  }
+}
+```
+
+- `setup(app, path)` - Called when the application starts or when the service is registered after startup
+- `teardown(app, path)` - Called when the application shuts down
+
+## Removing Services
+
+You can dynamically remove services using `app.unuse()`:
+
+```typescript Removing Services
+// Register a service
+app.use('/temp', tempService)
+
+// Later, remove it
+const removedService = await app.unuse('/temp')
+
+// Service teardown is called automatically
+```
+
+## Complete Service Example
+
+Here's a complete example of a custom service with validation and lifecycle methods:
+
+```typescript Complete Service Example
+class TaskService {
+  tasks = new Map()
+  nextId = 1
+  
+  async setup(app, path) {
+    console.log(`Task service ready at /${path}`)
+    this.app = app
+  }
+  
+  async find(params) {
+    const { query = {} } = params
+    let tasks = Array.from(this.tasks.values())
+    
+    // Filter by status
+    if (query.status) {
+      tasks = tasks.filter(t => t.status === query.status)
+    }
+    
+    // Filter by assignee
+    if (query.assignedTo) {
+      tasks = tasks.filter(t => t.assignedTo === query.assignedTo)
+    }
+    
+    return tasks
+  }
+  
+  async get(id, params) {
+    const task = this.tasks.get(id)
+    if (!task) {
+      throw new Error(`Task ${id} not found`)
+    }
+    return task
+  }
+  
+  async create(data, params) {
+    const task = {
+      id: this.nextId++,
+      ...data,
+      status: data.status || 'pending',
+      createdAt: new Date(),
+      createdBy: params.user?.id
+    }
+    
+    this.tasks.set(task.id, task)
+    return task
+  }
+  
+  async patch(id, data, params) {
+    const task = await this.get(id, params)
+    const updated = {
+      ...task,
+      ...data,
+      updatedAt: new Date(),
+      updatedBy: params.user?.id
+    }
+    
+    this.tasks.set(id, updated)
+    return updated
+  }
+  
+  async remove(id, params) {
+    const task = await this.get(id, params)
+    this.tasks.delete(id)
+    return task
+  }
+  
+  async teardown(app, path) {
+    console.log(`Cleaning up ${this.tasks.size} tasks`)
+    this.tasks.clear()
+  }
+}
+
+app.use('/tasks', new TaskService())
+```

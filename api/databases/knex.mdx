@@ -1,0 +1,489 @@
+---
+title: Knex Adapter
+description: API reference for the Feathers Knex SQL database adapter
+---
+
+The Knex adapter provides a service interface for SQL databases using the Knex.js query builder. Supports PostgreSQL, MySQL, SQLite, MSSQL, and Oracle.
+
+## Installation
+
+```bash
+npm install @feathersjs/knex knex
+# Plus your database driver
+npm install pg        # for PostgreSQL
+npm install mysql2    # for MySQL
+npm install sqlite3   # for SQLite
+```
+
+## KnexService
+
+The main service class for SQL operations via Knex.
+
+### Constructor
+
+```typescript
+import { KnexService } from '@feathersjs/knex'
+import knex from 'knex'
+
+const db = knex({ client: 'pg', connection: {...} })
+const service = new KnexService<Result, Data, ServiceParams, PatchData>(options)
+```
+
+<ParamField path="options" type="KnexAdapterOptions" required>
+  Configuration options for the Knex adapter
+  
+  <ParamField path="Model" type="Knex" required>
+    The Knex instance
+  </ParamField>
+  
+  <ParamField path="name" type="string" required>
+    The table name
+  </ParamField>
+  
+  <ParamField path="id" type="string" default="id">
+    Name of the id field property
+  </ParamField>
+  
+  <ParamField path="schema" type="string">
+    Database schema name (for PostgreSQL, MSSQL)
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationParams">
+    Pagination settings with `default` and `max` page size
+  </ParamField>
+  
+  <ParamField path="multi" type="boolean | string[]">
+    Allow multiple updates. Can be `true`, `false`, or an array of method names
+  </ParamField>
+  
+  <ParamField path="tableOptions" type="object">
+    <ParamField path="only" type="boolean">
+      Use ONLY keyword for table queries (PostgreSQL)
+    </ParamField>
+  </ParamField>
+  
+  <ParamField path="extendedOperators" type="Record<string, string>">
+    Custom query operators mapping. Example: `{ '$regexp': '~*' }`
+  </ParamField>
+</ParamField>
+
+### Service Methods
+
+#### find
+
+Retrieve multiple records from the table.
+
+```typescript
+await service.find(params?)
+```
+
+<ParamField path="params" type="KnexAdapterParams">
+  <ParamField path="query" type="AdapterQuery">
+    Query filters including `$limit`, `$skip`, `$sort`, `$select`, and SQL operators
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationOptions | false">
+    Override pagination settings
+  </ParamField>
+  
+  <ParamField path="knex" type="Knex.QueryBuilder">
+    Pre-configured Knex query builder to extend
+  </ParamField>
+  
+  <ParamField path="transaction" type="KnexAdapterTransaction">
+    Transaction object for transactional operations
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Paginated<Result> | Result[]">
+  Paginated results or array depending on settings
+</ResponseField>
+
+#### get
+
+Retrieve a single record by id.
+
+```typescript
+await service.get(id, params?)
+```
+
+<ParamField path="id" type="Id" required>
+  The record id to retrieve
+</ParamField>
+
+<ResponseField name="result" type="Result">
+  The found record
+</ResponseField>
+
+#### create
+
+Create one or more new records.
+
+```typescript
+await service.create(data, params?)
+```
+
+<ParamField path="data" type="Data | Data[]" required>
+  Record data to create. Arrays are processed sequentially
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The created record(s)
+</ResponseField>
+
+#### update
+
+Completely replace a record.
+
+```typescript
+await service.update(id, data, params?)
+```
+
+<ParamField path="id" type="Id" required>
+  The record id to update
+</ParamField>
+
+<ParamField path="data" type="Data" required>
+  Complete record data. Fields not provided will be set to null
+</ParamField>
+
+<ResponseField name="result" type="Result">
+  The updated record
+</ResponseField>
+
+#### patch
+
+Partially update one or multiple records.
+
+```typescript
+await service.patch(id, data, params?)
+```
+
+<ParamField path="id" type="Id | null" required>
+  The record id to patch, or `null` to patch multiple records matching the query
+</ParamField>
+
+<ParamField path="data" type="PatchData" required>
+  Partial data to merge with existing record(s)
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The patched record(s)
+</ResponseField>
+
+#### remove
+
+Remove one or multiple records.
+
+```typescript
+await service.remove(id, params?)
+```
+
+<ParamField path="id" type="Id | null" required>
+  The record id to remove, or `null` to remove multiple
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The removed record(s)
+</ResponseField>
+
+## KnexAdapter
+
+The base adapter class that `KnexService` extends.
+
+### Properties
+
+#### Model
+
+Access the Knex instance.
+
+```typescript
+const knex = service.Model
+```
+
+#### fullName
+
+Get the full table name including schema.
+
+```typescript
+const tableName = service.fullName // "myschema.mytable" or "mytable"
+```
+
+### Methods
+
+#### db
+
+Get a Knex query builder for the table, with transaction support.
+
+```typescript
+const queryBuilder = service.db(params?)
+```
+
+<ParamField path="params" type="KnexAdapterParams">
+  Parameters with optional transaction
+</ParamField>
+
+<ResponseField name="result" type="Knex.QueryBuilder">
+  Query builder for the configured table
+</ResponseField>
+
+#### createQuery
+
+Create a Knex query from Feathers parameters.
+
+```typescript
+const query = service.createQuery(params)
+```
+
+<ResponseField name="result" type="Knex.QueryBuilder">
+  Configured query builder with all filters applied
+</ResponseField>
+
+#### knexify
+
+Convert a Feathers query object to Knex where clauses.
+
+```typescript
+service.knexify(queryBuilder, query)
+```
+
+<ParamField path="queryBuilder" type="Knex.QueryBuilder" required>
+  The Knex query builder to modify
+</ParamField>
+
+<ParamField path="query" type="Query" required>
+  Feathers query object
+</ParamField>
+
+## Query Syntax
+
+### Standard Operators
+
+```typescript
+// Comparison operators
+await service.find({
+  query: {
+    age: { $gt: 18 },          // Greater than
+    score: { $gte: 90 },       // Greater than or equal
+    status: { $ne: 'deleted' }, // Not equal
+    role: { $in: ['admin', 'moderator'] } // In array
+  }
+})
+
+// Like operators (case-sensitive)
+await service.find({
+  query: {
+    name: { $like: '%john%' },
+    email: { $notlike: '%spam%' }
+  }
+})
+
+// Case-insensitive like (PostgreSQL)
+await service.find({
+  query: {
+    name: { $ilike: '%john%' }
+  }
+})
+```
+
+### Logical Operators
+
+```typescript
+// $or queries
+await service.find({
+  query: {
+    $or: [
+      { status: 'active' },
+      { role: 'admin' }
+    ]
+  }
+})
+
+// $and queries
+await service.find({
+  query: {
+    $and: [
+      { age: { $gte: 18 } },
+      { age: { $lt: 65 } }
+    ]
+  }
+})
+
+// Nested logical operators
+await service.find({
+  query: {
+    status: 'active',
+    $or: [
+      { role: 'admin' },
+      { $and: [
+        { age: { $gte: 18 } },
+        { verified: true }
+      ]}
+    ]
+  }
+})
+```
+
+### Special Query Parameters
+
+```typescript
+await service.find({
+  query: {
+    status: 'active',
+    $select: ['id', 'name', 'email'],  // Select specific columns
+    $sort: { createdAt: -1, name: 1 }, // Sort descending, then ascending
+    $limit: 25,                         // Limit results
+    $skip: 50                           // Offset for pagination
+  }
+})
+```
+
+### Extended Operators
+
+Add custom SQL operators:
+
+```typescript
+const service = new KnexService({
+  Model: knex,
+  name: 'users',
+  extendedOperators: {
+    '$regexp': '~',      // PostgreSQL regex
+    '$iregexp': '~*'     // PostgreSQL case-insensitive regex
+  }
+})
+
+await service.find({
+  query: {
+    email: { $regexp: '^[a-z]+@example\\.com$' }
+  }
+})
+```
+
+## Transactions
+
+The Knex adapter supports database transactions via hooks.
+
+### Transaction Hooks
+
+```typescript
+import { transaction } from '@feathersjs/knex'
+
+app.service('users').hooks({
+  before: {
+    create: [transaction.start()],
+    update: [transaction.start()],
+    patch: [transaction.start()],
+    remove: [transaction.start()]
+  },
+  after: {
+    create: [transaction.end()],
+    update: [transaction.end()],
+    patch: [transaction.end()],
+    remove: [transaction.end()]
+  },
+  error: {
+    create: [transaction.rollback()],
+    update: [transaction.rollback()],
+    patch: [transaction.rollback()],
+    remove: [transaction.rollback()]
+  }
+})
+```
+
+### Manual Transactions
+
+```typescript
+const trx = await knex.transaction()
+
+try {
+  await service.create(data1, {
+    transaction: { trx }
+  })
+  
+  await service.patch(id, data2, {
+    transaction: { trx }
+  })
+  
+  await trx.commit()
+} catch (error) {
+  await trx.rollback()
+  throw error
+}
+```
+
+### Nested Transactions
+
+Transaction hooks support nesting automatically:
+
+```typescript
+// Parent transaction
+await service.create(userData, params)
+  // Creates child transaction when calling another service
+  await otherService.create(relatedData, params)
+```
+
+## Example
+
+```typescript
+import { KnexService } from '@feathersjs/knex'
+import knex from 'knex'
+
+interface User {
+  id?: number
+  email: string
+  name: string
+  age: number
+  createdAt?: Date
+}
+
+const db = knex({
+  client: 'pg',
+  connection: {
+    host: 'localhost',
+    port: 5432,
+    user: 'postgres',
+    password: 'password',
+    database: 'myapp'
+  }
+})
+
+class UserService extends KnexService<User> {
+  async find(params: any) {
+    // Add custom query logic
+    params.query = params.query || {}
+    params.query.deletedAt = null
+    
+    return super.find(params)
+  }
+}
+
+const users = new UserService({
+  Model: db,
+  name: 'users',
+  schema: 'public',
+  paginate: {
+    default: 20,
+    max: 100
+  }
+})
+
+// Create a user
+const user = await users.create({
+  email: 'test@example.com',
+  name: 'Test User',
+  age: 25
+})
+
+// Find with complex query
+const results = await users.find({
+  query: {
+    $or: [
+      { age: { $gte: 18 } },
+      { role: 'admin' }
+    ],
+    status: 'active',
+    $sort: { createdAt: -1 },
+    $limit: 10
+  }
+})
+```

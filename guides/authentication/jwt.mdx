@@ -1,0 +1,555 @@
+---
+title: JWT Authentication Strategy
+description: Complete guide to JWT token authentication in Feathers including token creation, verification, and HTTP header parsing
+---
+
+The JWT (JSON Web Token) strategy authenticates requests using signed JWT access tokens. It's the primary method for authenticating API requests and WebSocket connections after initial login.
+
+## How JWT Strategy Works
+
+The JWT strategy:
+
+1. **Parses** authentication tokens from HTTP headers or WebSocket messages
+2. **Verifies** the token signature and expiration
+3. **Extracts** the user ID from the token payload (subject claim)
+4. **Retrieves** the full user entity from the database
+5. **Returns** the authenticated user
+
+## Installation
+
+The JWT strategy is included in `@feathersjs/authentication`:
+
+<CodeGroup>
+```bash npm
+npm install @feathersjs/authentication --save
+```
+
+```bash yarn
+yarn add @feathersjs/authentication
+```
+
+```bash pnpm
+pnpm add @feathersjs/authentication
+```
+</CodeGroup>
+
+## Configuration
+
+<Steps>
+  <Step title="Register JWT Strategy">
+    Register the JWT strategy with your authentication service:
+
+    ```typescript
+    import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+
+    const authentication = new AuthenticationService(app)
+    authentication.register('jwt', new JWTStrategy())
+
+    app.use('/authentication', authentication)
+    ```
+  </Step>
+
+  <Step title="Configure JWT Options">
+    Set JWT options in your application configuration:
+
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "secret": "your-secret-key",
+        "entity": "user",
+        "service": "users",
+        "authStrategies": ["jwt", "local"],
+        "jwtOptions": {
+          "header": { "typ": "access" },
+          "audience": "https://yourdomain.com",
+          "issuer": "feathers",
+          "algorithm": "HS256",
+          "expiresIn": "1d"
+        },
+        "jwt": {
+          "header": "Authorization",
+          "schemes": ["Bearer", "JWT"]
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Protect Services">
+    Use the authenticate hook to require JWT authentication:
+
+    ```typescript
+    import { authenticate } from '@feathersjs/authentication'
+
+    app.service('users').hooks({
+      before: {
+        all: [authenticate('jwt')]
+      }
+    })
+    ```
+  </Step>
+</Steps>
+
+## Configuration Options
+
+### JWT Options (`jwtOptions`)
+
+These options control JWT token creation:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `header` | `object` | `{ typ: 'access' }` | JWT header claims |
+| `audience` | `string` | `'https://yourdomain.com'` | Token audience (who can use it) |
+| `issuer` | `string` | `'feathers'` | Token issuer (who created it) |
+| `algorithm` | `string` | `'HS256'` | Signing algorithm |
+| `expiresIn` | `string\|number` | `'1d'` | Token expiration time |
+| `subject` | `string` | Entity ID | Token subject (user ID) |
+| `jwtid` | `string` | UUID v4 | Unique token identifier |
+
+**Expiration formats**: `'1d'`, `'2h'`, `'30m'`, `'60s'`, or seconds as number
+
+**Algorithms**: HS256, HS384, HS512, RS256, RS384, RS512, ES256, ES384, ES512
+
+### JWT Strategy Options (`jwt`)
+
+These options control JWT token parsing from HTTP requests:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `header` | `string` | `'Authorization'` | HTTP header to parse |
+| `schemes` | `string[]` | `['Bearer', 'JWT']` | Token scheme prefixes |
+| `entity` | `string` | From auth config | Entity name |
+| `service` | `string` | From auth config | Entity service path |
+| `entityId` | `string` | From auth config | Entity ID property |
+
+<Warning>
+  JWT strategy options must be configured in the `jwt` section, not as top-level strategy options. Setting invalid options will throw an error.
+  
+  ```typescript
+  // strategy.ts:80-89
+  // Allowed keys: entity, entityId, service, header, schemes
+  // All other options should be in jwtOptions
+  ```
+</Warning>
+
+## Token Creation
+
+Tokens are created by the authentication service after successful login:
+
+```typescript
+// Login with credentials
+const result = await app.service('authentication').create({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'password123'
+})
+
+console.log(result)
+// {
+//   accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+//   authentication: {
+//     strategy: 'local',
+//     payload: {
+//       sub: '123',           // User ID
+//       iat: 1234567890,      // Issued at
+//       exp: 1234654290,      // Expires at
+//       aud: 'https://yourdomain.com',
+//       iss: 'feathers',
+//       jti: 'uuid-v4-string'
+//     }
+//   },
+//   user: { id: '123', email: 'user@example.com' }
+// }
+```
+
+### Manual Token Creation
+
+Create tokens programmatically:
+
+```typescript
+const authService = app.service('authentication')
+
+// Create token for a user
+const accessToken = await authService.createAccessToken(
+  { userId: '123' },  // Payload
+  { expiresIn: '7d' } // Options override
+)
+```
+
+## Token Verification
+
+Tokens are automatically verified by the JWT strategy:
+
+```typescript
+// jwt.ts:134-163
+// 1. Extract token from request
+// 2. Verify signature and expiration
+// 3. Extract user ID from payload
+// 4. Fetch user from database
+// 5. Return authentication result
+
+async authenticate(authentication, params) {
+  const { accessToken } = authentication
+  
+  if (!accessToken) {
+    throw new NotAuthenticated('No access token')
+  }
+  
+  // Verify token signature and expiration
+  const payload = await this.authentication.verifyAccessToken(
+    accessToken, 
+    params.jwt
+  )
+  
+  // Get user ID from token subject
+  const entityId = await this.getEntityId(result, params)
+  const user = await this.getEntity(entityId, params)
+  
+  return {
+    accessToken,
+    authentication: { strategy: 'jwt', accessToken, payload },
+    user
+  }
+}
+```
+
+### Manual Token Verification
+
+```typescript
+try {
+  const payload = await app.service('authentication')
+    .verifyAccessToken(token)
+  
+  console.log('Valid token for user:', payload.sub)
+} catch (error) {
+  console.error('Invalid token:', error.message)
+}
+```
+
+## HTTP Authentication
+
+<Tabs>
+  <Tab title="Bearer Token">
+    The most common format:
+
+    ```bash
+    curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+      https://api.example.com/messages
+    ```
+
+    JavaScript:
+    ```javascript
+    fetch('https://api.example.com/messages', {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="JWT Scheme">
+    Alternative JWT scheme:
+
+    ```bash
+    curl -H "Authorization: JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+      https://api.example.com/messages
+    ```
+  </Tab>
+
+  <Tab title="Without Scheme">
+    If no scheme is configured:
+
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "jwt": {
+          "header": "Authorization",
+          "schemes": []  // No scheme required
+        }
+      }
+    }
+    ```
+
+    ```bash
+    curl -H "Authorization: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+      https://api.example.com/messages
+    ```
+  </Tab>
+
+  <Tab title="Custom Header">
+    Use a custom header:
+
+    ```typescript
+    // config/default.json
+    {
+      "authentication": {
+        "jwt": {
+          "header": "X-API-Token",
+          "schemes": []
+        }
+      }
+    }
+    ```
+
+    ```bash
+    curl -H "X-API-Token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+      https://api.example.com/messages
+    ```
+  </Tab>
+</Tabs>
+
+## WebSocket Authentication
+
+Authenticate WebSocket connections:
+
+```typescript
+import io from 'socket.io-client'
+
+// Connect with authentication
+const socket = io('https://api.example.com', {
+  auth: {
+    strategy: 'jwt',
+    accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+  }
+})
+
+// Or authenticate after connection
+socket.emit('create', 'authentication', {
+  strategy: 'jwt',
+  accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+})
+```
+
+### Connection Management
+
+The JWT strategy automatically manages WebSocket connections:
+
+```typescript
+// jwt.ts:32-78
+// On login:
+// 1. Calculate time until token expires
+// 2. Set timer to disconnect connection
+// 3. Store authentication info on connection
+
+// On logout or disconnect:
+// 1. Clear authentication info
+// 2. Cancel expiration timer
+// 3. Remove user reference
+```
+
+<Info>
+  Connections are automatically closed when tokens expire, forcing clients to re-authenticate with a fresh token.
+</Info>
+
+## Token Refresh
+
+Implement token refresh by re-authenticating with an existing token:
+
+```typescript
+// Client-side token refresh
+async function refreshToken() {
+  const currentToken = localStorage.getItem('accessToken')
+  
+  try {
+    const result = await app.service('authentication').create({
+      strategy: 'jwt',
+      accessToken: currentToken
+    })
+    
+    // Store new token
+    localStorage.setItem('accessToken', result.accessToken)
+    return result.accessToken
+  } catch (error) {
+    // Token invalid or expired, redirect to login
+    window.location.href = '/login'
+  }
+}
+
+// Refresh before token expires
+setInterval(refreshToken, 23 * 60 * 60 * 1000) // 23 hours for 1d tokens
+```
+
+## Custom Entity Queries
+
+Customize the query used to fetch the user entity:
+
+```typescript
+import { JWTStrategy } from '@feathersjs/authentication'
+
+class CustomJWTStrategy extends JWTStrategy {
+  async getEntityQuery(params) {
+    return {
+      $select: ['id', 'email', 'roles', 'permissions'],
+      isActive: true
+    }
+  }
+}
+
+authentication.register('jwt', new CustomJWTStrategy())
+```
+
+## Custom Entity ID Extraction
+
+Extract user ID from custom token claims:
+
+```typescript
+class CustomJWTStrategy extends JWTStrategy {
+  async getEntityId(authResult, params) {
+    // Default uses token 'sub' claim
+    // Override to use custom claim
+    return authResult.authentication.payload.userId ||
+           authResult.authentication.payload.sub
+  }
+}
+```
+
+## Security Best Practices
+
+<Warning>
+  **Critical Security Considerations**
+</Warning>
+
+### Secret Management
+
+```typescript
+// ❌ Never hardcode secrets
+const config = {
+  authentication: {
+    secret: 'my-secret-key'  // DON'T DO THIS
+  }
+}
+
+// ✅ Use environment variables
+const config = {
+  authentication: {
+    secret: process.env.AUTH_SECRET
+  }
+}
+```
+
+### Token Expiration
+
+```typescript
+// Balance security and user experience
+const jwtOptions = {
+  expiresIn: '1d',    // Web apps: short-lived
+  // expiresIn: '30d' // Mobile apps: longer-lived with refresh
+}
+```
+
+### Algorithm Selection
+
+```typescript
+// Symmetric algorithms (HS256) - single secret
+jwtOptions: {
+  algorithm: 'HS256',
+  secret: 'shared-secret'
+}
+
+// Asymmetric algorithms (RS256) - public/private key pair
+jwtOptions: {
+  algorithm: 'RS256',
+  secret: privateKey,
+  // Clients verify with publicKey
+}
+```
+
+### Token Validation
+
+```typescript
+// Always validate audience and issuer
+jwtOptions: {
+  audience: 'https://yourdomain.com',
+  issuer: 'feathers'
+}
+
+// On verification:
+verifyOptions: {
+  audience: 'https://yourdomain.com',
+  issuer: 'feathers',
+  algorithms: ['HS256']  // Prevent algorithm confusion attacks
+}
+```
+
+### HTTPS Only
+
+<Warning>
+  Always use HTTPS in production to prevent token interception.
+  
+  Consider setting secure cookie flags and HTTP Strict Transport Security (HSTS) headers.
+</Warning>
+
+## Troubleshooting
+
+### Token Verification Fails
+
+```typescript
+// Error: Invalid token signature
+// Cause: Secret mismatch or token tampered
+// Solution: Verify secret is consistent across servers
+
+// Error: Token expired
+// Cause: Token past expiration time
+// Solution: Implement token refresh or re-authenticate
+
+// Error: Invalid algorithm
+// Cause: Token signed with different algorithm
+// Solution: Verify algorithm configuration matches
+```
+
+### User Not Found
+
+```typescript
+// Error: Could not get entity
+// Cause: User ID in token doesn't exist in database
+// Solution: User may have been deleted, invalidate token
+
+class CustomJWTStrategy extends JWTStrategy {
+  async getEntity(id, params) {
+    try {
+      return await super.getEntity(id, params)
+    } catch (error) {
+      throw new NotAuthenticated('User no longer exists')
+    }
+  }
+}
+```
+
+### Configuration Errors
+
+```typescript
+// Error: Invalid JwtStrategy option 'authentication.jwt.expiresIn'
+// Cause: JWT option in wrong configuration section
+// Solution: Move to jwtOptions
+
+// ❌ Wrong
+{
+  "authentication": {
+    "jwt": {
+      "expiresIn": "1d"  // Wrong location
+    }
+  }
+}
+
+// ✅ Correct
+{
+  "authentication": {
+    "jwtOptions": {
+      "expiresIn": "1d"  // Correct location
+    }
+  }
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Local Strategy" icon="lock" href="/guides/authentication/local">
+    Add username/password authentication
+  </Card>
+  <Card title="OAuth Strategy" icon="users" href="/guides/authentication/oauth">
+    Enable social login with OAuth
+  </Card>
+</CardGroup>

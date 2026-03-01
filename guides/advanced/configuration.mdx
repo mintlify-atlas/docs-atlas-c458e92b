@@ -1,0 +1,406 @@
+---
+title: Application Configuration
+description: Learn how to configure your Feathers application with environment-based settings, schema validation, and best practices for production deployments.
+---
+
+Feathers uses the powerful [`config`](https://github.com/node-config/node-config) module for application configuration. The `@feathersjs/configuration` package seamlessly integrates configuration management into your Feathers application.
+
+## Installation
+
+```bash
+npm install @feathersjs/configuration --save
+```
+
+## Basic Setup
+
+Configuration is typically set up in your main application file:
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import configuration from '@feathersjs/configuration'
+
+const app = feathers()
+
+// Load configuration from config/ folder
+app.configure(configuration())
+
+// Access configuration values
+const port = app.get('port')
+const host = app.get('host')
+```
+
+## Configuration Files
+
+The configuration module loads settings from JSON files in a `config/` directory at your project root. Files are loaded based on the `NODE_ENV` environment variable.
+
+<Steps>
+
+### Create the config directory
+
+```bash
+mkdir config
+```
+
+### Add default.json
+
+Create `config/default.json` with your default settings:
+
+```json
+{
+  "host": "localhost",
+  "port": 3030,
+  "public": "./public/",
+  "origins": ["http://localhost:3030"],
+  "paginate": {
+    "default": 10,
+    "max": 50
+  }
+}
+```
+
+### Add environment-specific files
+
+Create environment-specific files that override defaults:
+
+- `config/development.json` - Development settings
+- `config/production.json` - Production settings  
+- `config/test.json` - Test settings
+
+```json
+// config/test.json
+{
+  "port": 8998
+}
+```
+
+### Add environment variables mapping
+
+Create `config/custom-environment-variables.json` to map environment variables:
+
+```json
+{
+  "port": {
+    "__name": "PORT",
+    "__format": "number"
+  },
+  "host": "HOSTNAME",
+  "authentication": {
+    "secret": "FEATHERS_SECRET"
+  }
+}
+```
+
+</Steps>
+
+## Schema Validation
+
+You can validate your configuration at application startup using a schema. This ensures your app fails fast with clear errors if configuration is invalid.
+
+<CodeGroup>
+
+```typescript TypeBox
+import { Type, getValidator, defaultAppConfiguration } from '@feathersjs/typebox'
+import { dataValidator } from './validators'
+
+export const configurationSchema = Type.Intersect([
+  defaultAppConfiguration,
+  Type.Object({
+    host: Type.String(),
+    port: Type.Number(),
+    public: Type.String()
+  })
+])
+
+export type ApplicationConfiguration = Static<typeof configurationSchema>
+
+export const configurationValidator = getValidator(configurationSchema, dataValidator)
+```
+
+```typescript JSON Schema
+import { defaultAppSettings, getValidator } from '@feathersjs/schema'
+import type { FromSchema } from '@feathersjs/schema'
+import { dataValidator } from './validators'
+
+export const configurationSchema = {
+  $id: 'configuration',
+  type: 'object',
+  additionalProperties: false,
+  required: ['host', 'port', 'public'],
+  properties: {
+    ...defaultAppSettings,
+    host: { type: 'string' },
+    port: { type: 'number' },
+    public: { type: 'string' }
+  }
+} as const
+
+export const configurationValidator = getValidator(configurationSchema, dataValidator)
+
+export type ApplicationConfiguration = FromSchema<typeof configurationSchema>
+```
+
+</CodeGroup>
+
+Then use the validator when configuring your app:
+
+```typescript
+import configuration from '@feathersjs/configuration'
+import { configurationValidator } from './configuration'
+
+app.configure(configuration(configurationValidator))
+```
+
+The validator runs as a setup hook and will throw detailed validation errors if configuration is invalid:
+
+```typescript
+// Example validation error
+await app.setup() // Throws error if config invalid
+// Error: [
+//   {
+//     instancePath: '/port',
+//     keyword: 'type',
+//     message: 'must be number'
+//   }
+// ]
+```
+
+## Common Configuration Patterns
+
+### Database Configuration
+
+```json
+{
+  "mongodb": "mongodb://localhost:27017/myapp",
+  "postgres": {
+    "client": "pg",
+    "connection": {
+      "host": "localhost",
+      "port": 5432,
+      "database": "myapp",
+      "user": "postgres",
+      "password": "secret"
+    }
+  }
+}
+```
+
+### CORS Configuration
+
+```json
+{
+  "origins": [
+    "http://localhost:3030",
+    "https://myapp.com"
+  ]
+}
+```
+
+### Authentication Configuration
+
+```json
+{
+  "authentication": {
+    "secret": "your-secret-key",
+    "entity": "user",
+    "service": "users",
+    "authStrategies": ["jwt", "local"],
+    "jwtOptions": {
+      "header": { "typ": "access" },
+      "audience": "https://yourdomain.com",
+      "issuer": "feathers",
+      "algorithm": "HS256",
+      "expiresIn": "1d"
+    }
+  }
+}
+```
+
+### Pagination Configuration
+
+```json
+{
+  "paginate": {
+    "default": 10,
+    "max": 50
+  }
+}
+```
+
+## Environment Variables
+
+Configuration values can be overridden using environment variables through the `custom-environment-variables.json` file.
+
+### Variable Formats
+
+The `__format` key tells the config module how to parse the environment variable:
+
+```json
+{
+  "port": {
+    "__name": "PORT",
+    "__format": "number"
+  },
+  "enabled": {
+    "__name": "FEATURE_ENABLED",
+    "__format": "boolean"
+  },
+  "items": {
+    "__name": "ITEMS_JSON",
+    "__format": "json"
+  }
+}
+```
+
+### Usage
+
+```bash
+# Set environment variables
+export PORT=8080
+export HOSTNAME=0.0.0.0
+export FEATHERS_SECRET=my-production-secret
+
+# Start your app
+node src/index.js
+```
+
+<Note>
+Environment variables always take precedence over configuration files, making them perfect for production deployments.
+</Note>
+
+## Accessing Configuration
+
+Access configuration values anywhere in your application using `app.get()`:
+
+```typescript
+// In your application code
+const port = app.get('port')
+const host = app.get('host')
+const dbConnection = app.get('mongodb')
+
+// In hooks
+app.hooks({
+  before: {
+    all: [
+      async (context) => {
+        const maxItems = context.app.get('paginate').max
+        // Use configuration value
+      }
+    ]
+  }
+})
+
+// In services
+class MyService {
+  async setup(app, path) {
+    this.itemsPerPage = app.get('paginate').default
+  }
+}
+```
+
+## Using Configuration Without App
+
+You can also use configuration outside of the Feathers application context:
+
+```typescript
+import configuration from '@feathersjs/configuration'
+
+const configFunction = configuration()
+const config = configFunction()
+
+console.log(config.port) // 3030
+```
+
+## Best Practices
+
+<Warning>
+Never commit sensitive information like API keys, database passwords, or authentication secrets to version control. Use environment variables for production secrets.
+</Warning>
+
+### 1. Use .gitignore
+
+```bash
+# .gitignore
+config/local.json
+config/local-*.json
+config/production.json
+.env
+```
+
+### 2. Document Required Variables
+
+Create a `.env.example` file:
+
+```bash
+# .env.example
+PORT=3030
+NODE_ENV=development
+FEATHERS_SECRET=your-secret-here
+DATABASE_URL=mongodb://localhost:27017/myapp
+```
+
+### 3. Validate Early
+
+Always use schema validation to catch configuration errors before your app starts serving requests.
+
+### 4. Use Typed Configuration
+
+Define a TypeScript type for your configuration:
+
+```typescript
+export type ApplicationConfiguration = {
+  host: string
+  port: number
+  public: string
+  origins: string[]
+  paginate: {
+    default: number
+    max: number
+  }
+  mongodb?: string
+  authentication?: {
+    secret: string
+    entity: string
+    service: string
+  }
+}
+
+// Use in your app declaration
+type ServiceTypes = {
+  // your services
+}
+
+const app: Application<ServiceTypes, ApplicationConfiguration> = express(feathers())
+```
+
+### 5. Keep Defaults Sensible
+
+Your `default.json` should contain safe defaults for development. Production values should come from environment-specific files or environment variables.
+
+## Debugging Configuration
+
+The configuration module uses the `@feathersjs/commons` debug module. Enable debug output:
+
+```bash
+DEBUG=@feathersjs/configuration npm start
+```
+
+This will show:
+- Which environment is being loaded
+- What configuration values are being set
+- The final merged configuration
+
+## Migration from Older Versions
+
+If you're upgrading from Feathers v4 or earlier:
+
+1. Configuration setup remains largely the same
+2. Schema validation is new in v5 - add it for better reliability
+3. The configuration module now uses setup hooks for validation
+4. Type safety has been improved with TypeScript
+
+## Related Resources
+
+- [Node Config Documentation](https://github.com/node-config/node-config)
+- [Application API](/api/application)
+- [Schema Validation](/api/schema)
+- [Environment Variables Best Practices](https://12factor.net/config)

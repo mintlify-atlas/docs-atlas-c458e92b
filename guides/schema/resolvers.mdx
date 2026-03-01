@@ -1,0 +1,582 @@
+---
+title: Schema Resolvers
+description: Transform and resolve data properties with resolvers, including virtual properties, converters, and secure data handling
+---
+
+Resolvers transform data properties before or after service method execution. They enable powerful patterns like hashing passwords, computing virtual properties, and controlling data visibility.
+
+## Resolver Basics
+
+Resolvers are defined as property maps where each property has a resolver function:
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+import { HookContext } from '@feathersjs/feathers'
+
+type User = {
+  firstName: string
+  lastName: string
+  password: string
+  name?: string
+}
+
+const userResolver = resolve<User, HookContext>({
+  // Hash password before saving
+  password: async (value) => {
+    return await bcrypt.hash(value, 10)
+  },
+  
+  // Compute full name from other properties
+  name: async (value, user) => {
+    return `${user.firstName} ${user.lastName}`
+  }
+})
+```
+
+## Resolver Hooks
+
+The schema system provides hooks for different resolver scenarios:
+
+<Tabs>
+  <Tab title="resolveData">
+    Transform data before it reaches the service method:
+    
+    ```typescript
+    import { resolveData } from '@feathersjs/schema'
+
+    app.service('users').hooks({
+      create: [resolveData(userDataResolver)],
+      update: [resolveData(userDataResolver)],
+      patch: [resolveData(userDataResolver)]
+    })
+    ```
+  </Tab>
+  
+  <Tab title="resolveResult">
+    Transform result after the service method (around hook):
+    
+    ```typescript
+    import { resolveResult } from '@feathersjs/schema'
+
+    app.service('users').hooks({
+      around: {
+        all: [resolveResult(userResultResolver)]
+      }
+    })
+    ```
+  </Tab>
+  
+  <Tab title="resolveQuery">
+    Transform query parameters before the service method:
+    
+    ```typescript
+    import { resolveQuery } from '@feathersjs/schema'
+
+    app.service('messages').hooks({
+      find: [resolveQuery(messageQueryResolver)],
+      get: [resolveQuery(messageQueryResolver)]
+    })
+    ```
+  </Tab>
+  
+  <Tab title="resolveExternal">
+    Transform data for external clients (around hook):
+    
+    ```typescript
+    import { resolveExternal } from '@feathersjs/schema'
+
+    app.service('users').hooks({
+      around: {
+        all: [resolveExternal(userExternalResolver)]
+      }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Property Resolvers
+
+Property resolvers receive four parameters:
+
+```typescript
+import { resolve, PropertyResolver } from '@feathersjs/schema'
+import { HookContext } from '@feathersjs/feathers'
+
+const resolver = resolve<User, HookContext>({
+  name: async (
+    value,      // Current value of the property
+    obj,        // The entire data object
+    context,    // The hook context
+    status      // Resolver status (path, stack, etc.)
+  ) => {
+    console.log('Resolver path:', status.path)  // ['name']
+    console.log('User email:', obj.email)
+    return `${obj.firstName} ${obj.lastName}`
+  }
+})
+```
+
+## Virtual Properties
+
+Virtual properties are computed values that don't exist in the original data:
+
+<Steps>
+  <Step title="Define Virtual Property">
+    Use the `virtual` helper to create computed properties:
+    
+    ```typescript
+    import { resolve, virtual } from '@feathersjs/schema'
+    import { HookContext } from '@feathersjs/feathers'
+
+    type Message = {
+      text: string
+      userId: number
+      user?: User  // Virtual property
+    }
+
+    const messageResolver = resolve<Message, HookContext>({
+      user: virtual(async (message, context) => {
+        // Fetch related user
+        const user = await context.app.service('users').get(message.userId)
+        return user
+      })
+    })
+    ```
+  </Step>
+  
+  <Step title="Apply to Results">
+    Virtual properties are typically resolved on results:
+    
+    ```typescript
+    import { resolveResult } from '@feathersjs/schema'
+
+    app.service('messages').hooks({
+      around: {
+        all: [resolveResult(messageResolver)]
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Query with $resolve">
+    Use `$resolve` to select specific virtual properties:
+    
+    ```typescript
+    // Only resolve the 'user' virtual property
+    await app.service('messages').find({
+      query: {
+        $resolve: ['user']
+      }
+    })
+    ```
+  </Step>
+</Steps>
+
+## Virtual Properties with $select
+
+Virtual properties work seamlessly with `$select`:
+
+```typescript
+const messageResolver = resolve<Message, HookContext>({
+  user: virtual(async (message, context) => {
+    return await context.app.service('users').get(message.userId)
+  }),
+  
+  userList: virtual(async (message, context) => {
+    return await context.app.service('users').find({
+      query: { organizationId: message.organizationId }
+    })
+  })
+})
+
+app.service('messages').hooks({
+  around: {
+    all: [resolveResult(messageResolver)]
+  }
+})
+
+// Select only specific virtual properties
+await app.service('messages').find({
+  query: {
+    $select: ['text', 'user']  // Resolves 'user' but not 'userList'
+  }
+})
+```
+
+## Secure Data Handling
+
+Use resolvers to protect sensitive data:
+
+<CodeGroup>
+```typescript Hash Passwords
+const userDataResolver = resolve<UserData, HookContext>({
+  password: async (value) => {
+    // Always hash passwords before saving
+    return await bcrypt.hash(value, 10)
+  }
+})
+
+app.service('users').hooks({
+  create: [resolveData(userDataResolver)],
+  update: [resolveData(userDataResolver)],
+  patch: [resolveData(userDataResolver)]
+})
+```
+
+```typescript Hide Sensitive Fields
+const userExternalResolver = resolve<User, HookContext>({
+  password: async () => undefined,  // Never send to client
+  email: async () => '[redacted]'   // Redact for external
+})
+
+app.service('users').hooks({
+  around: {
+    all: [resolveExternal(userExternalResolver)]
+  }
+})
+```
+
+```typescript Role-Based Visibility
+const userExternalResolver = resolve<User, HookContext>({
+  email: async (value, user, context) => {
+    // Only show email to authenticated users
+    if (!context.params.user) {
+      return '[redacted]'
+    }
+    return value
+  },
+  
+  password: async () => undefined  // Always hide
+})
+```
+</CodeGroup>
+
+## Multiple Resolvers
+
+Chain multiple resolvers for complex transformations:
+
+```typescript
+import { resolveResult } from '@feathersjs/schema'
+
+const firstResolver = resolve<User, HookContext>({
+  name: async (value, user) => user.email.split('@')[0]
+})
+
+const secondResolver = resolve<User, HookContext>({
+  name: async (value, user) => `${value} (${user.email})`
+})
+
+// Resolvers are applied in order
+app.service('users').hooks({
+  around: {
+    all: [resolveResult(firstResolver, secondResolver)]
+  }
+})
+
+// Input:  { email: 'dave@example.com' }
+// After first:  { email: '...', name: 'dave' }
+// After second: { email: '...', name: 'dave (dave@example.com)' }
+```
+
+## Converters
+
+Converters transform the entire data object before property resolution:
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+
+const userResolver = resolve<User, HookContext>({
+  converter: async (data, context) => {
+    // Transform or add defaults
+    return {
+      firstName: 'Guest',
+      lastName: 'User',
+      ...data,
+      updatedAt: new Date()
+    }
+  },
+  properties: {
+    name: async (value, user) => `${user.firstName} ${user.lastName}`
+  }
+})
+
+// Converter runs before property resolvers
+await userResolver.resolve({}, context)
+// Result: { firstName: 'Guest', lastName: 'User', name: 'Guest User', updatedAt: Date }
+```
+
+## Query Resolvers
+
+Transform query parameters for security and convenience:
+
+```typescript
+import { resolveQuery } from '@feathersjs/schema'
+import { HookContext } from '@feathersjs/feathers'
+
+type MessageQuery = {
+  text?: string
+  userId?: number
+}
+
+const messageQueryResolver = resolve<MessageQuery, HookContext>({
+  userId: async (value, query, context) => {
+    // Automatically filter by authenticated user
+    if (context.params.user) {
+      return context.params.user.id
+    }
+    return value
+  }
+})
+
+app.service('messages').hooks({
+  find: [resolveQuery(messageQueryResolver)]
+})
+
+// User only sees their own messages
+await app.service('messages').find()
+// Query is automatically modified to: { userId: <current-user-id> }
+```
+
+## Resolver Status
+
+Resolvers receive a status object with metadata:
+
+```typescript
+import { resolve, ResolverStatus } from '@feathersjs/schema'
+
+const resolver = resolve<User, HookContext>({
+  name: async (value, user, context, status) => {
+    console.log('Current path:', status.path)  // ['name']
+    console.log('Property stack:', status.stack)  // Array of resolvers
+    console.log('Original context:', status.originalContext)
+    console.log('Selected properties:', status.properties)
+    
+    return `${user.firstName} ${user.lastName}`
+  }
+})
+```
+
+## Error Handling
+
+Resolvers can throw errors that are automatically collected:
+
+```typescript
+import { resolve } from '@feathersjs/schema'
+import { BadRequest } from '@feathersjs/errors'
+
+const userResolver = resolve<User, HookContext>({
+  name: async (value) => {
+    if (value === 'Admin') {
+      throw new Error('Reserved name')
+    }
+    return value
+  },
+  
+  age: async (value) => {
+    if (value && value < 18) {
+      throw new BadRequest('Must be 18 or older')
+    }
+    return value
+  }
+})
+
+try {
+  await userResolver.resolve({ name: 'Admin', age: 16 }, context)
+} catch (error) {
+  console.log(error.name)     // 'BadRequest'
+  console.log(error.message)  // 'Error resolving data'
+  console.log(error.data)
+  // {
+  //   name: { message: 'Reserved name' },
+  //   age: {
+  //     name: 'BadRequest',
+  //     message: 'Must be 18 or older',
+  //     code: 400,
+  //     className: 'bad-request'
+  //   }
+  // }
+}
+```
+
+## Circular Dependency Prevention
+
+Resolvers automatically prevent circular dependencies:
+
+```typescript
+const resolver = resolve<User, HookContext>({
+  fullName: async (value, user, context, status) => {
+    // If already in the stack, returns undefined to prevent infinite loop
+    if (status.stack.includes(resolver)) {
+      return undefined
+    }
+    return `${user.firstName} ${user.lastName}`
+  }
+})
+```
+
+## Advanced Patterns
+
+<AccordionGroup>
+  <Accordion title="Nested Data Resolution">
+    Resolve nested objects and arrays:
+    
+    ```typescript
+    const messageResolver = resolve<Message, HookContext>({
+      user: virtual(async (message, context) => {
+        const user = await context.app.service('users').get(message.userId)
+        return user
+      }),
+      
+      comments: virtual(async (message, context) => {
+        const comments = await context.app.service('comments').find({
+          query: { messageId: message.id }
+        })
+        return comments.data
+      })
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Conditional Resolution">
+    Resolve properties based on conditions:
+    
+    ```typescript
+    const userResolver = resolve<User, HookContext>({
+      email: async (value, user, context) => {
+        // Only show email to owner or admin
+        const currentUser = context.params.user
+        
+        if (currentUser?.id === user.id || currentUser?.isAdmin) {
+          return value
+        }
+        
+        return '[hidden]'
+      }
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Pagination with Virtual Properties">
+    Handle paginated results with virtual properties:
+    
+    ```typescript
+    const messageResolver = resolve<Message, HookContext>({
+      userPage: virtual(async (message, context) => {
+        // Returns paginated result
+        return await context.app.service('users').find({
+          query: {
+            organizationId: message.organizationId,
+            $limit: 10
+          }
+        })
+      })
+    })
+
+    // resolveResult handles both single and paginated results
+    app.service('messages').hooks({
+      around: {
+        all: [resolveResult(messageResolver)]
+      }
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="External vs Internal Resolution">
+    Use different resolvers for internal and external data:
+    
+    ```typescript
+    // Internal resolver - adds computed properties
+    const messageResultResolver = resolve<Message, HookContext>({
+      user: virtual(async (message, context) => {
+        return await context.app.service('users').get(message.userId)
+      })
+    })
+
+    // External resolver - hides sensitive data
+    const messageExternalResolver = resolve<Message, HookContext>({
+      userId: async () => undefined,  // Hide user ID
+      user: async (value: User) => ({
+        // Only expose public user data
+        id: value.id,
+        name: value.name
+      })
+    })
+
+    app.service('messages').hooks({
+      around: {
+        all: [
+          resolveResult(messageResultResolver),
+          resolveExternal(messageExternalResolver)
+        ]
+      }
+    })
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Resolver with Schema Validation
+
+Combine resolvers with schema validation:
+
+```typescript
+import { resolve, schema } from '@feathersjs/schema'
+import { validateData, resolveData } from '@feathersjs/schema'
+
+const userDataSchema = schema({
+  $id: 'UserData',
+  type: 'object',
+  required: ['email', 'password'],
+  properties: {
+    email: { type: 'string' },
+    password: { type: 'string' }
+  }
+} as const)
+
+const userDataResolver = resolve<UserData, HookContext>({
+  schema: userDataSchema,
+  validate: 'before',  // Validate before resolving
+  properties: {
+    password: async (value) => await bcrypt.hash(value, 10)
+  }
+})
+
+// Or use separate hooks (recommended)
+app.service('users').hooks({
+  create: [
+    validateData(userDataSchema),
+    resolveData(userDataResolver)
+  ]
+})
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use virtual for computed properties" icon="wand-magic-sparkles">
+    Always use `virtual()` for properties that don't exist in the original data.
+  </Card>
+  
+  <Card title="Resolve queries for security" icon="shield">
+    Use query resolvers to enforce access control and prevent data leaks.
+  </Card>
+  
+  <Card title="Separate internal and external" icon="arrows-split-up-and-left">
+    Use `resolveResult` for internal data and `resolveExternal` for client data.
+  </Card>
+  
+  <Card title="Chain resolvers for clarity" icon="link">
+    Use multiple focused resolvers instead of one complex resolver.
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Data Validation" icon="check" href="/guides/schema/validation">
+    Learn how to validate data with schemas
+  </Card>
+  
+  <Card title="Schema Overview" icon="book" href="/guides/schema/overview">
+    Back to schema system overview
+  </Card>
+</CardGroup>

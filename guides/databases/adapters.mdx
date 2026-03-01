@@ -1,0 +1,669 @@
+---
+title: Common Adapter Patterns
+description: Learn common patterns, best practices, and advanced techniques for working with Feathers database adapters across all database types.
+---
+
+This guide covers patterns and techniques that apply to all Feathers database adapters, helping you build robust and maintainable data services.
+
+## Service Patterns
+
+### Extending Adapters
+
+Custom service classes allow you to add business logic:
+
+<CodeGroup>
+```typescript Timestamps
+import { MongoDBService } from '@feathersjs/mongodb'
+import type { Params } from '@feathersjs/feathers'
+
+interface Article {
+  _id: ObjectId
+  title: string
+  content: string
+  createdAt: Date
+  updatedAt: Date
+}
+
+class ArticleService extends MongoDBService<Article> {
+  async create(data: Partial<Article>, params?: Params) {
+    const articleData = {
+      ...data,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+    return super.create(articleData, params)
+  }
+
+  async patch(id: any, data: Partial<Article>, params?: Params) {
+    const patchData = {
+      ...data,
+      updatedAt: new Date()
+    }
+    return super.patch(id, patchData, params)
+  }
+}
+```
+
+```typescript Soft Delete
+import { KnexService } from '@feathersjs/knex'
+
+class UserService extends KnexService {
+  async remove(id: any, params?: Params) {
+    // Soft delete instead of actual removal
+    return this.patch(id, {
+      deleted: true,
+      deletedAt: new Date()
+    }, params)
+  }
+
+  async find(params?: Params) {
+    // Exclude deleted records by default
+    const query = {
+      ...params?.query,
+      deleted: { $ne: true }
+    }
+    return super.find({ ...params, query })
+  }
+}
+```
+
+```typescript Auto-increment Slug
+import { MongoDBService } from '@feathersjs/mongodb'
+
+class PostService extends MongoDBService {
+  async create(data: any, params?: Params) {
+    if (!data.slug && data.title) {
+      let slug = this.slugify(data.title)
+      let exists = true
+      let counter = 0
+      
+      while (exists) {
+        const testSlug = counter ? `${slug}-${counter}` : slug
+        const existing = await this._find({
+          query: { slug: testSlug },
+          paginate: false
+        })
+        
+        if (existing.length === 0) {
+          slug = testSlug
+          exists = false
+        } else {
+          counter++
+        }
+      }
+      
+      data.slug = slug
+    }
+    
+    return super.create(data, params)
+  }
+
+  private slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '')
+      .replace(/[\s_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+  }
+}
+```
+</CodeGroup>
+
+### Multi-tenancy
+
+Implement multi-tenancy with query filtering:
+
+<CodeGroup>
+```typescript Tenant Isolation
+import { MongoDBService } from '@feathersjs/mongodb'
+
+class TenantService extends MongoDBService {
+  async find(params?: Params) {
+    const tenantId = params?.user?.tenantId
+    if (!tenantId) {
+      throw new Forbidden('No tenant context')
+    }
+    
+    return super.find({
+      ...params,
+      query: {
+        ...params?.query,
+        tenantId
+      }
+    })
+  }
+
+  async create(data: any, params?: Params) {
+    const tenantId = params?.user?.tenantId
+    if (!tenantId) {
+      throw new Forbidden('No tenant context')
+    }
+    
+    return super.create({
+      ...data,
+      tenantId
+    }, params)
+  }
+
+  async get(id: any, params?: Params) {
+    const tenantId = params?.user?.tenantId
+    return super.get(id, {
+      ...params,
+      query: {
+        ...params?.query,
+        tenantId
+      }
+    })
+  }
+}
+```
+
+```typescript Tenant Hook
+// Alternative: Use a hook for all methods
+import { HookContext } from '@feathersjs/feathers'
+
+const addTenantId = async (context: HookContext) => {
+  const { params, method, id, data } = context
+  const tenantId = params.user?.tenantId
+  
+  if (!tenantId) {
+    throw new Forbidden('No tenant context')
+  }
+  
+  // Add to query for find, get, patch, remove
+  if (method === 'find' || method === 'get' || method === 'patch' || method === 'remove') {
+    context.params.query = {
+      ...context.params.query,
+      tenantId
+    }
+  }
+  
+  // Add to data for create, update, patch
+  if (method === 'create' || method === 'update' || method === 'patch') {
+    if (Array.isArray(data)) {
+      context.data = data.map(item => ({ ...item, tenantId }))
+    } else {
+      context.data = { ...data, tenantId }
+    }
+  }
+  
+  return context
+}
+
+app.service('documents').hooks({
+  before: {
+    all: [addTenantId]
+  }
+})
+```
+</CodeGroup>
+
+## Query Patterns
+
+### Complex Queries
+
+Build sophisticated queries using operators:
+
+<CodeGroup>
+```typescript Date Ranges
+// Find records in date range
+const startDate = new Date('2024-01-01')
+const endDate = new Date('2024-12-31')
+
+const results = await app.service('orders').find({
+  query: {
+    createdAt: {
+      $gte: startDate,
+      $lte: endDate
+    },
+    status: 'completed'
+  }
+})
+```
+
+```typescript Nested Conditions
+// Complex logical queries
+const users = await app.service('users').find({
+  query: {
+    $or: [
+      {
+        $and: [
+          { role: 'admin' },
+          { verified: true }
+        ]
+      },
+      {
+        $and: [
+          { role: 'moderator' },
+          { experience: { $gte: 5 } },
+          { verified: true }
+        ]
+      }
+    ],
+    status: 'active'
+  }
+})
+```
+
+```typescript Array Matching
+// Find documents with array conditions
+const posts = await app.service('posts').find({
+  query: {
+    tags: { $in: ['javascript', 'typescript'] },
+    categories: { $nin: ['archived', 'draft'] },
+    status: 'published'
+  }
+})
+```
+</CodeGroup>
+
+### Pagination Patterns
+
+<CodeGroup>
+```typescript Cursor-based Pagination
+// Efficient pagination for large datasets
+interface CursorParams extends Params {
+  query?: {
+    cursor?: string
+    $limit?: number
+  }
+}
+
+class CursorService extends MongoDBService {
+  async find(params?: CursorParams) {
+    const limit = params?.query?.$limit || 20
+    const cursor = params?.query?.cursor
+    
+    const query: any = {}
+    
+    if (cursor) {
+      // Decode cursor (in practice, use proper encoding)
+      query._id = { $gt: new ObjectId(cursor) }
+    }
+    
+    const results = await super.find({
+      ...params,
+      query: {
+        ...params?.query,
+        ...query,
+        $limit: limit,
+        $sort: { _id: 1 }
+      },
+      paginate: false
+    })
+    
+    const hasMore = results.length === limit
+    const nextCursor = hasMore
+      ? results[results.length - 1]._id.toString()
+      : null
+    
+    return {
+      data: results,
+      nextCursor,
+      hasMore
+    }
+  }
+}
+```
+
+```typescript Infinite Scroll
+// Load more pattern
+let page = 0
+const pageSize = 20
+const allResults = []
+
+const loadMore = async () => {
+  const results = await app.service('posts').find({
+    query: {
+      status: 'published',
+      $limit: pageSize,
+      $skip: page * pageSize,
+      $sort: { createdAt: -1 }
+    }
+  })
+  
+  allResults.push(...results.data)
+  page++
+  
+  return {
+    data: results.data,
+    hasMore: allResults.length < results.total
+  }
+}
+```
+</CodeGroup>
+
+## Performance Optimization
+
+### Query Optimization
+
+<CodeGroup>
+```typescript Field Projection
+// Only fetch needed fields
+const users = await app.service('users').find({
+  query: {
+    status: 'active',
+    $select: ['id', 'name', 'email']
+    // Exclude large fields like 'bio', 'avatar', etc.
+  }
+})
+```
+
+```typescript Limit Results
+// Prevent excessive data fetching
+app.use('logs', new MongoDBService({
+  Model: db.collection('logs'),
+  paginate: {
+    default: 50,
+    max: 200  // Prevent users from requesting too much
+  }
+}))
+```
+
+```typescript Query Hints (MongoDB)
+// Use indexes efficiently
+const users = await app.service('users').find({
+  query: { status: 'active' },
+  mongodb: {
+    hint: { status: 1, createdAt: -1 }
+  }
+})
+```
+</CodeGroup>
+
+### Caching Strategies
+
+<CodeGroup>
+```typescript Simple Cache
+import { HookContext } from '@feathersjs/feathers'
+
+const cache = new Map()
+
+const cacheResults = async (context: HookContext) => {
+  const cacheKey = JSON.stringify(context.params.query)
+  
+  if (context.method === 'find') {
+    const cached = cache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < 60000) {
+      context.result = cached.data
+      return context
+    }
+  }
+  
+  return context
+}
+
+const saveToCache = async (context: HookContext) => {
+  if (context.method === 'find') {
+    const cacheKey = JSON.stringify(context.params.query)
+    cache.set(cacheKey, {
+      data: context.result,
+      timestamp: Date.now()
+    })
+  }
+  return context
+}
+
+// Invalidate cache on mutations
+const invalidateCache = async (context: HookContext) => {
+  cache.clear()
+  return context
+}
+
+app.service('users').hooks({
+  before: {
+    find: [cacheResults]
+  },
+  after: {
+    find: [saveToCache],
+    create: [invalidateCache],
+    update: [invalidateCache],
+    patch: [invalidateCache],
+    remove: [invalidateCache]
+  }
+})
+```
+
+```typescript Redis Cache
+import Redis from 'ioredis'
+import { HookContext } from '@feathersjs/feathers'
+
+const redis = new Redis()
+
+const redisCacheGet = async (context: HookContext) => {
+  if (context.method === 'find') {
+    const cacheKey = `service:${context.path}:${JSON.stringify(context.params.query)}`
+    const cached = await redis.get(cacheKey)
+    
+    if (cached) {
+      context.result = JSON.parse(cached)
+    }
+  }
+  return context
+}
+
+const redisCacheSet = async (context: HookContext) => {
+  if (context.method === 'find' && !context.params.skipCache) {
+    const cacheKey = `service:${context.path}:${JSON.stringify(context.params.query)}`
+    await redis.setex(cacheKey, 300, JSON.stringify(context.result))
+  }
+  return context
+}
+
+const redisCacheInvalidate = async (context: HookContext) => {
+  const pattern = `service:${context.path}:*`
+  const keys = await redis.keys(pattern)
+  if (keys.length > 0) {
+    await redis.del(...keys)
+  }
+  return context
+}
+```
+</CodeGroup>
+
+## Data Validation
+
+### Schema Validation
+
+<CodeGroup>
+```typescript Using @feathersjs/schema
+import { hooks, querySyntax, Ajv } from '@feathersjs/schema'
+
+const userSchema = {
+  $id: 'User',
+  type: 'object',
+  additionalProperties: false,
+  required: ['email', 'name'],
+  properties: {
+    id: { type: 'number' },
+    email: { type: 'string', format: 'email' },
+    name: { type: 'string', minLength: 2 },
+    age: { type: 'number', minimum: 0, maximum: 150 }
+  }
+}
+
+const userValidator = new Ajv().compile(userSchema)
+
+app.service('users').hooks({
+  before: {
+    create: [hooks.validateData(userValidator)],
+    update: [hooks.validateData(userValidator)],
+    patch: [hooks.validateData(userValidator)]
+  }
+})
+```
+
+```typescript Custom Validation
+import { BadRequest } from '@feathersjs/errors'
+import { HookContext } from '@feathersjs/feathers'
+
+const validateUser = async (context: HookContext) => {
+  const { data } = context
+  
+  if (data.email && !isValidEmail(data.email)) {
+    throw new BadRequest('Invalid email address')
+  }
+  
+  if (data.age && (data.age < 0 || data.age > 150)) {
+    throw new BadRequest('Age must be between 0 and 150')
+  }
+  
+  return context
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+```
+</CodeGroup>
+
+## Error Handling
+
+### Adapter-specific Errors
+
+<CodeGroup>
+```typescript MongoDB Errors
+import { Conflict, BadRequest } from '@feathersjs/errors'
+import { HookContext } from '@feathersjs/feathers'
+
+const handleMongoErrors = async (context: HookContext) => {
+  const error = context.error as any
+  
+  if (error.code === 11000) {
+    // Duplicate key error
+    const field = Object.keys(error.keyPattern)[0]
+    throw new Conflict(`Duplicate ${field}`, {
+      field,
+      value: error.keyValue[field]
+    })
+  }
+  
+  if (error.name === 'ValidationError') {
+    throw new BadRequest('Validation failed', error.errors)
+  }
+  
+  throw error
+}
+
+app.service('users').hooks({
+  error: {
+    all: [handleMongoErrors]
+  }
+})
+```
+
+```typescript SQL Errors
+import { Conflict, BadRequest } from '@feathersjs/errors'
+
+const handleSqlErrors = async (context: HookContext) => {
+  const error = context.error as any
+  
+  // PostgreSQL unique violation
+  if (error.code === '23505') {
+    throw new Conflict('Duplicate entry', {
+      constraint: error.constraint
+    })
+  }
+  
+  // Foreign key violation
+  if (error.code === '23503') {
+    throw new BadRequest('Foreign key constraint failed', {
+      constraint: error.constraint
+    })
+  }
+  
+  throw error
+}
+```
+</CodeGroup>
+
+## Testing
+
+### Unit Testing Services
+
+<CodeGroup>
+```typescript In-memory Testing
+import { MemoryService } from '@feathersjs/memory'
+import assert from 'assert'
+
+describe('User Service', () => {
+  let service: MemoryService
+  
+  beforeEach(() => {
+    service = new MemoryService({
+      paginate: {
+        default: 10,
+        max: 50
+      }
+    })
+  })
+  
+  it('creates a user', async () => {
+    const user = await service.create({
+      name: 'Test User',
+      email: 'test@example.com'
+    })
+    
+    assert.strictEqual(user.name, 'Test User')
+    assert.strictEqual(user.email, 'test@example.com')
+    assert.ok(user.id)
+  })
+  
+  it('finds users with pagination', async () => {
+    await service.create({ name: 'User 1' })
+    await service.create({ name: 'User 2' })
+    
+    const results = await service.find({
+      query: { $limit: 1 }
+    })
+    
+    assert.strictEqual(results.total, 2)
+    assert.strictEqual(results.data.length, 1)
+  })
+})
+```
+
+```typescript Integration Testing
+import { app } from '../src/app'
+import assert from 'assert'
+
+describe('Users Service Integration', () => {
+  before(async () => {
+    // Setup database
+    await app.get('mongoClient').connect()
+  })
+  
+  after(async () => {
+    // Cleanup
+    await app.get('mongoClient').close()
+  })
+  
+  it('creates and retrieves a user', async () => {
+    const created = await app.service('users').create({
+      name: 'Test',
+      email: 'test@example.com'
+    })
+    
+    const retrieved = await app.service('users').get(created._id)
+    assert.deepStrictEqual(retrieved, created)
+  })
+})
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="MongoDB Adapter" icon="leaf" href="/guides/databases/mongodb">
+    Deep dive into MongoDB features
+  </Card>
+  <Card title="Knex Adapter" icon="database" href="/guides/databases/knex">
+    Learn SQL-specific patterns
+  </Card>
+  <Card title="Hooks" icon="hook" href="/guides/basics/hooks">
+    Master service hooks
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/basics/authentication">
+    Secure your services
+  </Card>
+</CardGroup>

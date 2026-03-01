@@ -1,0 +1,378 @@
+---
+title: "Database Configuration"
+description: "Configure database connections for MongoDB, PostgreSQL, MySQL, SQLite, and SQL Server"
+---
+
+Feathers supports multiple database adapters through its unified configuration system. Database configuration is stored in `config/default.json` and can be customized per environment.
+
+## Supported Databases
+
+The Feathers CLI supports the following databases:
+
+- **MongoDB** - Document database using the `@feathersjs/mongodb` adapter
+- **PostgreSQL** - Relational database using Knex adapter
+- **MySQL/MariaDB** - Relational database using Knex adapter
+- **SQLite** - File-based relational database using Knex adapter
+- **Microsoft SQL Server** - Enterprise relational database using Knex adapter
+
+## MongoDB Configuration
+
+MongoDB uses a connection string format for configuration.
+
+<ParamField path="mongodb" type="string">
+  MongoDB connection string.
+  
+  **Format:** `mongodb://[username:password@]host[:port]/database[?options]`
+  
+  **Default:** `mongodb://127.0.0.1:27017/[app-name]`
+</ParamField>
+
+### MongoDB Connection Example
+
+```json config/default.json
+{
+  "mongodb": "mongodb://127.0.0.1:27017/myapp"
+}
+```
+
+### MongoDB with Authentication
+
+```json config/default.json
+{
+  "mongodb": "mongodb://username:password@localhost:27017/myapp?authSource=admin"
+}
+```
+
+### MongoDB Service Implementation
+
+The CLI generates a MongoDB connection file:
+
+```typescript src/mongodb.ts
+import { MongoClient } from 'mongodb'
+import type { Db } from 'mongodb'
+import type { Application } from './declarations'
+
+declare module './declarations' {
+  interface Configuration {
+    mongodbClient: Promise<Db>
+  }
+}
+
+export const mongodb = (app: Application) => {
+  const connection = app.get('mongodb') as string
+  const database = new URL(connection).pathname.substring(1)
+  const mongoClient = MongoClient.connect(connection)
+    .then(client => client.db(database))
+
+  app.set('mongodbClient', mongoClient)
+}
+```
+
+## SQL Databases (Knex)
+
+SQL databases (PostgreSQL, MySQL, SQLite, MSSQL) use Knex as the query builder. The configuration varies slightly by database type.
+
+### PostgreSQL Configuration
+
+<ParamField path="postgresql" type="object">
+  PostgreSQL database configuration.
+  
+  <Expandable title="properties">
+    <ParamField path="postgresql.client" type="string" required>
+      The database client library to use.
+      
+      **Value:** `pg`
+    </ParamField>
+    
+    <ParamField path="postgresql.connection" type="string | object" required>
+      Connection string or connection object.
+      
+      **String format:** `postgres://user:password@localhost:5432/database`
+      
+      **Object format:** See connection object properties below
+    </ParamField>
+    
+    <ParamField path="postgresql.pool" type="object">
+      Connection pool settings.
+      
+      <Expandable title="properties">
+        <ParamField path="postgresql.pool.min" type="number">
+          Minimum number of connections in the pool.
+          
+          **Default:** `2`
+        </ParamField>
+        
+        <ParamField path="postgresql.pool.max" type="number">
+          Maximum number of connections in the pool.
+          
+          **Default:** `10`
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+#### Connection Object Format
+
+<ParamField path="connection.host" type="string">
+  Database host address.
+</ParamField>
+
+<ParamField path="connection.port" type="number">
+  Database port number.
+</ParamField>
+
+<ParamField path="connection.user" type="string">
+  Database username.
+</ParamField>
+
+<ParamField path="connection.password" type="string">
+  Database password.
+</ParamField>
+
+<ParamField path="connection.database" type="string">
+  Database name.
+</ParamField>
+
+### MySQL Configuration
+
+<ParamField path="mysql" type="object">
+  MySQL/MariaDB database configuration.
+  
+  <Expandable title="properties">
+    <ParamField path="mysql.client" type="string" required>
+      The database client library.
+      
+      **Value:** `mysql` or `mysql2`
+    </ParamField>
+    
+    <ParamField path="mysql.connection" type="string | object" required>
+      Connection string or connection object.
+      
+      **String format:** `mysql://user:password@localhost:3306/database`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### SQLite Configuration
+
+<ParamField path="sqlite" type="object">
+  SQLite database configuration.
+  
+  <Expandable title="properties">
+    <ParamField path="sqlite.client" type="string" required>
+      The database client library.
+      
+      **Value:** `sqlite3` or `better-sqlite3`
+    </ParamField>
+    
+    <ParamField path="sqlite.connection" type="string" required>
+      Path to the SQLite database file.
+      
+      **Example:** `./data/myapp.sqlite` or `:memory:` for in-memory database
+    </ParamField>
+    
+    <ParamField path="sqlite.useNullAsDefault" type="boolean">
+      Use null as default value for undefined columns.
+      
+      **Default:** `true`
+      
+      **Note:** Required for SQLite
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Microsoft SQL Server Configuration
+
+<ParamField path="mssql" type="object">
+  Microsoft SQL Server database configuration.
+  
+  <Expandable title="properties">
+    <ParamField path="mssql.client" type="string" required>
+      The database client library.
+      
+      **Value:** `mssql`
+    </ParamField>
+    
+    <ParamField path="mssql.connection" type="string | object" required>
+      Connection string or connection object.
+      
+      **String format:** `mssql://user:password@localhost:1433/database`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Configuration Examples
+
+<CodeGroup>
+
+```json PostgreSQL (Connection String)
+{
+  "postgresql": {
+    "client": "pg",
+    "connection": "postgres://postgres:password@localhost:5432/myapp"
+  }
+}
+```
+
+```json PostgreSQL (Connection Object)
+{
+  "postgresql": {
+    "client": "pg",
+    "connection": {
+      "host": "localhost",
+      "port": 5432,
+      "user": "postgres",
+      "password": "password",
+      "database": "myapp"
+    },
+    "pool": {
+      "min": 2,
+      "max": 10
+    }
+  }
+}
+```
+
+```json MySQL
+{
+  "mysql": {
+    "client": "mysql2",
+    "connection": "mysql://root:password@localhost:3306/myapp"
+  }
+}
+```
+
+```json SQLite
+{
+  "sqlite": {
+    "client": "sqlite3",
+    "connection": "./data/myapp.sqlite",
+    "useNullAsDefault": true
+  }
+}
+```
+
+```json MongoDB
+{
+  "mongodb": "mongodb://127.0.0.1:27017/myapp"
+}
+```
+
+</CodeGroup>
+
+## Knex Service Implementation
+
+For SQL databases, the CLI generates a Knex connection file:
+
+```typescript src/postgresql.ts
+import knex from 'knex'
+import type { Knex } from 'knex'
+import type { Application } from './declarations'
+
+declare module './declarations' {
+  interface Configuration {
+    postgresqlClient: Knex
+  }
+}
+
+export const postgresql = (app: Application) => {
+  const config = app.get('postgresql')
+  const db = knex(config!)
+
+  app.set('postgresqlClient', db)
+}
+```
+
+## Migrations
+
+When using Knex (SQL databases), the CLI sets up migration support:
+
+### Running Migrations
+
+```bash
+# Run all pending migrations
+npm run migrate
+
+# Create a new migration
+npm run migrate:make migration_name
+```
+
+### Migration Configuration
+
+The CLI generates a `knexfile.ts` that loads configuration from your app:
+
+```typescript knexfile.ts
+import { app } from './src/app'
+
+// Load database connection info from app configuration
+const config = app.get('postgresql')
+
+module.exports = config
+```
+
+## Environment Variables
+
+Store database credentials in environment variables for security:
+
+```json config/custom-environment-variables.json
+{
+  "postgresql": {
+    "connection": "DATABASE_URL"
+  },
+  "mongodb": "MONGODB_URL"
+}
+```
+
+Then set the environment variable:
+
+```bash
+export DATABASE_URL="postgres://user:password@localhost:5432/myapp"
+export MONGODB_URL="mongodb://localhost:27017/myapp"
+```
+
+## Connection Testing
+
+Test your database connection:
+
+<CodeGroup>
+
+```typescript MongoDB
+// In a service or hook
+const db = await app.get('mongodbClient')
+const collections = await db.listCollections().toArray()
+console.log('Connected to MongoDB:', collections.length, 'collections')
+```
+
+```typescript Knex (SQL)
+// In a service or hook
+const db = app.get('postgresqlClient')
+const result = await db.raw('SELECT NOW()')
+console.log('Connected to PostgreSQL:', result.rows[0])
+```
+
+</CodeGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use connection pooling">
+    Configure appropriate pool sizes for your application's load. Start with defaults and adjust based on monitoring.
+  </Accordion>
+  
+  <Accordion title="Store credentials securely">
+    Never commit database credentials to version control. Use environment variables and `custom-environment-variables.json`.
+  </Accordion>
+  
+  <Accordion title="Use migrations for schema changes">
+    Always use migrations to manage database schema changes. This ensures consistency across environments.
+  </Accordion>
+  
+  <Accordion title="Configure different databases per environment">
+    Use separate databases for development, testing, and production. Configure them in environment-specific files.
+  </Accordion>
+  
+  <Accordion title="Handle connection errors gracefully">
+    Implement proper error handling for database connection failures and add retry logic where appropriate.
+  </Accordion>
+</AccordionGroup>

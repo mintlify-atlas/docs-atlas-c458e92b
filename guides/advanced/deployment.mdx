@@ -1,0 +1,722 @@
+---
+title: Deployment Best Practices
+description: Production deployment guide for Feathers applications covering environment setup, security, performance optimization, and platform-specific deployment strategies.
+---
+
+Deploying a Feathers application to production requires careful configuration, security hardening, and performance optimization. This guide covers best practices for production deployments.
+
+## Pre-Deployment Checklist
+
+Before deploying to production, ensure you've completed these critical steps:
+
+<Steps>
+
+### Set NODE_ENV to production
+
+```bash
+export NODE_ENV=production
+```
+
+This enables:
+- Production optimizations in Express/Koa
+- Production configuration loading
+- Disabled verbose logging
+- Better error handling
+
+### Configure environment variables
+
+Set all required environment variables for your production environment:
+
+```bash
+export PORT=3030
+export NODE_ENV=production
+export FEATHERS_SECRET=your-strong-random-secret
+export DATABASE_URL=your-production-database-url
+```
+
+### Build your application
+
+Compile TypeScript to JavaScript:
+
+```bash
+npm run compile
+```
+
+### Run tests
+
+Ensure all tests pass:
+
+```bash
+NODE_ENV=test npm test
+```
+
+### Review security settings
+
+Verify CORS, authentication, and other security configurations are production-ready.
+
+</Steps>
+
+## Production Configuration
+
+### Environment-Specific Config
+
+Create `config/production.json` with production settings:
+
+```json
+{
+  "host": "0.0.0.0",
+  "port": 3030,
+  "public": "./public/",
+  "origins": [
+    "https://yourdomain.com",
+    "https://www.yourdomain.com"
+  ],
+  "paginate": {
+    "default": 25,
+    "max": 100
+  }
+}
+```
+
+<Warning>
+Never commit `config/production.json` if it contains secrets. Use environment variables for sensitive data.
+</Warning>
+
+### Environment Variables Mapping
+
+Use `config/custom-environment-variables.json` to map environment variables:
+
+```json
+{
+  "port": {
+    "__name": "PORT",
+    "__format": "number"
+  },
+  "host": "HOSTNAME",
+  "authentication": {
+    "secret": "FEATHERS_SECRET"
+  },
+  "mongodb": "DATABASE_URL",
+  "postgres": {
+    "connection": "DATABASE_URL"
+  }
+}
+```
+
+## Application Setup
+
+### Server Startup
+
+Your main entry point should properly initialize the application:
+
+```typescript
+// src/index.ts
+import { app } from './app'
+import { logger } from './logger'
+
+const port = app.get('port')
+const host = app.get('host')
+
+const server = app.listen(port, host)
+
+server.on('listening', () => {
+  logger.info(
+    `Feathers application started on http://${host}:${port}`
+  )
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
+  process.exit(1)
+})
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error)
+  process.exit(1)
+})
+```
+
+### Graceful Shutdown
+
+Implement graceful shutdown to cleanly close connections:
+
+```typescript
+// src/index.ts
+const shutdown = async (signal: string) => {
+  logger.info(`${signal} received, starting graceful shutdown`)
+  
+  server.close(async () => {
+    logger.info('HTTP server closed')
+    
+    try {
+      await app.teardown()
+      logger.info('Feathers app teardown complete')
+      process.exit(0)
+    } catch (error) {
+      logger.error('Error during teardown:', error)
+      process.exit(1)
+    }
+  })
+
+  // Force shutdown after 30 seconds
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout')
+    process.exit(1)
+  }, 30000)
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+```
+
+## Security Best Practices
+
+### 1. Authentication Secret
+
+Use a strong, random secret for JWT signing:
+
+```bash
+# Generate a strong secret
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+
+# Set as environment variable
+export FEATHERS_SECRET="your-generated-secret-here"
+```
+
+### 2. CORS Configuration
+
+Restrict origins to your actual domains:
+
+```typescript
+// src/app.ts
+import express from '@feathersjs/express'
+
+app.use(cors({
+  origin: app.get('origins'), // From config
+  credentials: true
+}))
+```
+
+### 3. Rate Limiting
+
+Protect against brute force attacks:
+
+```bash
+npm install express-rate-limit
+```
+
+```typescript
+import rateLimit from 'express-rate-limit'
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP'
+})
+
+app.use('/authentication', limiter)
+```
+
+### 4. Helmet for Security Headers
+
+```bash
+npm install helmet
+```
+
+```typescript
+import helmet from 'helmet'
+
+app.use(helmet())
+```
+
+### 5. Data Validation
+
+Always validate and sanitize user input:
+
+```typescript
+import { hooks } from '@feathersjs/schema'
+
+app.service('users').hooks({
+  before: {
+    create: [hooks.validateData(userDataSchema)],
+    patch: [hooks.validateData(userPatchSchema)]
+  }
+})
+```
+
+## Database Configuration
+
+### Connection Pooling
+
+Configure appropriate connection pool settings:
+
+```typescript
+// PostgreSQL with Knex
+export const db = knex({
+  client: 'pg',
+  connection: app.get('postgres'),
+  pool: {
+    min: 2,
+    max: 10,
+    acquireTimeoutMillis: 30000,
+    idleTimeoutMillis: 30000
+  }
+})
+```
+
+### MongoDB Connection
+
+```typescript
+import { MongoClient } from 'mongodb'
+
+const client = await MongoClient.connect(app.get('mongodb'), {
+  maxPoolSize: 10,
+  minPoolSize: 2,
+  maxIdleTimeMS: 30000,
+  serverSelectionTimeoutMS: 5000
+})
+```
+
+### Database Cleanup on Shutdown
+
+```typescript
+app.hooks({
+  teardown: [
+    async () => {
+      // Close database connections
+      await db.destroy()
+      logger.info('Database connections closed')
+    }
+  ]
+})
+```
+
+## Performance Optimization
+
+### 1. Enable Compression
+
+```bash
+npm install compression
+```
+
+```typescript
+import compression from 'compression'
+
+app.use(compression())
+```
+
+### 2. Optimize Pagination
+
+Set reasonable pagination limits:
+
+```json
+{
+  "paginate": {
+    "default": 25,
+    "max": 100
+  }
+}
+```
+
+### 3. Use Caching
+
+Implement caching for frequently accessed data:
+
+```typescript
+import Redis from 'ioredis'
+
+const redis = new Redis(app.get('redis'))
+
+app.service('users').hooks({
+  after: {
+    get: [
+      async (context) => {
+        const key = `user:${context.id}`
+        await redis.setex(key, 3600, JSON.stringify(context.result))
+        return context
+      }
+    ]
+  },
+  before: {
+    get: [
+      async (context) => {
+        const key = `user:${context.id}`
+        const cached = await redis.get(key)
+        if (cached) {
+          context.result = JSON.parse(cached)
+        }
+        return context
+      }
+    ]
+  }
+})
+```
+
+### 4. Database Indexes
+
+Ensure proper indexes on frequently queried fields:
+
+```typescript
+// MongoDB
+await db.collection('users').createIndex({ email: 1 }, { unique: true })
+await db.collection('messages').createIndex({ userId: 1, createdAt: -1 })
+
+// PostgreSQL
+await knex.schema.table('users', (table) => {
+  table.index('email')
+})
+```
+
+## Platform-Specific Deployment
+
+### Docker
+
+Create a `Dockerfile`:
+
+```dockerfile
+FROM node:20-alpine
+
+# Create app directory
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy compiled code
+COPY lib/ ./lib/
+COPY public/ ./public/
+COPY config/ ./config/
+
+# Expose port
+EXPOSE 3030
+
+# Start application
+CMD ["node", "lib/index.js"]
+```
+
+Create `docker-compose.yml` for local production testing:
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3030:3030"
+    environment:
+      - NODE_ENV=production
+      - PORT=3030
+      - FEATHERS_SECRET=${FEATHERS_SECRET}
+      - DATABASE_URL=mongodb://mongo:27017/myapp
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+volumes:
+  mongo-data:
+```
+
+### Heroku
+
+Create a `Procfile`:
+
+```
+web: node lib/index.js
+```
+
+Set environment variables:
+
+```bash
+heroku config:set NODE_ENV=production
+heroku config:set FEATHERS_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+```
+
+### AWS (Elastic Beanstalk)
+
+Create `.ebextensions/nodecommand.config`:
+
+```yaml
+option_settings:
+  aws:elasticbeanstalk:container:nodejs:
+    NodeCommand: "npm start"
+  aws:elasticbeanstalk:application:environment:
+    NODE_ENV: production
+```
+
+### DigitalOcean App Platform
+
+Create `.do/app.yaml`:
+
+```yaml
+name: my-feathers-app
+services:
+- name: web
+  build_command: npm run compile
+  run_command: node lib/index.js
+  environment_slug: node-js
+  envs:
+  - key: NODE_ENV
+    value: production
+  - key: FEATHERS_SECRET
+    type: SECRET
+```
+
+## Monitoring and Logging
+
+### Structured Logging
+
+Use Winston or Pino for production logging:
+
+```typescript
+// src/logger.ts
+import winston from 'winston'
+
+export const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ 
+      filename: 'logs/error.log', 
+      level: 'error' 
+    }),
+    new winston.transports.File({ 
+      filename: 'logs/combined.log' 
+    })
+  ]
+})
+```
+
+### Error Tracking
+
+Integrate error tracking (Sentry, Rollbar, etc.):
+
+```bash
+npm install @sentry/node
+```
+
+```typescript
+import * as Sentry from '@sentry/node'
+
+if (process.env.NODE_ENV === 'production') {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV
+  })
+}
+
+app.hooks({
+  error: {
+    all: [
+      async (context) => {
+        if (process.env.NODE_ENV === 'production') {
+          Sentry.captureException(context.error)
+        }
+      }
+    ]
+  }
+})
+```
+
+### Health Checks
+
+Implement health check endpoints:
+
+```typescript
+app.get('/health', async (req, res) => {
+  try {
+    // Check database connection
+    await db.raw('SELECT 1')
+    
+    res.json({
+      status: 'healthy',
+      uptime: process.uptime(),
+      timestamp: Date.now()
+    })
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      error: error.message
+    })
+  }
+})
+```
+
+## SSL/TLS Configuration
+
+### Using HTTPS
+
+For production, use HTTPS:
+
+```typescript
+import https from 'https'
+import fs from 'fs'
+
+const options = {
+  key: fs.readFileSync(app.get('ssl').key),
+  cert: fs.readFileSync(app.get('ssl').cert)
+}
+
+const server = https.createServer(options, app)
+server.listen(port)
+```
+
+### Reverse Proxy (Recommended)
+
+In most cases, use a reverse proxy like Nginx:
+
+```nginx
+server {
+  listen 80;
+  server_name yourdomain.com;
+  return 301 https://$server_name$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name yourdomain.com;
+
+  ssl_certificate /path/to/cert.pem;
+  ssl_certificate_key /path/to/key.pem;
+
+  location / {
+    proxy_pass http://localhost:3030;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection 'upgrade';
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_cache_bypass $http_upgrade;
+  }
+}
+```
+
+## Scaling Considerations
+
+### Horizontal Scaling
+
+When running multiple instances, use a message queue for real-time events:
+
+```bash
+npm install @feathersjs/transport-commons
+```
+
+Configure Redis for pub/sub:
+
+```typescript
+import Redis from 'ioredis'
+
+const pub = new Redis(app.get('redis'))
+const sub = new Redis(app.get('redis'))
+
+// Sync events across instances
+app.on('publish', (event) => {
+  pub.publish('feathers-events', JSON.stringify(event))
+})
+
+sub.subscribe('feathers-events')
+sub.on('message', (channel, message) => {
+  const event = JSON.parse(message)
+  app.emit(event.name, event.data)
+})
+```
+
+### Process Management
+
+Use PM2 for process management:
+
+```bash
+npm install -g pm2
+```
+
+Create `ecosystem.config.js`:
+
+```javascript
+module.exports = {
+  apps: [{
+    name: 'feathers-app',
+    script: './lib/index.js',
+    instances: 'max',
+    exec_mode: 'cluster',
+    env: {
+      NODE_ENV: 'production'
+    }
+  }]
+}
+```
+
+Start with PM2:
+
+```bash
+pm2 start ecosystem.config.js
+pm2 save
+pm2 startup
+```
+
+## Continuous Deployment
+
+### GitHub Actions Example
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Run tests
+      run: npm test
+    
+    - name: Build
+      run: npm run compile
+    
+    - name: Deploy to server
+      run: |
+        # Your deployment commands
+```
+
+## Post-Deployment
+
+After deployment:
+
+1. **Verify health checks** - Ensure the application is responding
+2. **Check logs** - Monitor for errors or warnings
+3. **Test critical paths** - Verify authentication, key services
+4. **Monitor performance** - Watch CPU, memory, response times
+5. **Set up alerts** - Configure monitoring alerts
+
+## Related Resources
+
+- [Configuration Guide](/guides/advanced/configuration)
+- [Testing Guide](/guides/advanced/testing)
+- [Security Best Practices](https://cheatsheetseries.owasp.org/cheatsheets/Nodejs_Security_Cheat_Sheet.html)
+- [The Twelve-Factor App](https://12factor.net/)

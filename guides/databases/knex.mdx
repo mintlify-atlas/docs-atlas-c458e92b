@@ -1,0 +1,709 @@
+---
+title: Knex SQL Adapter
+description: Connect to SQL databases with the Feathers Knex adapter supporting PostgreSQL, MySQL, SQLite, MSSQL, and more with full transaction support.
+---
+
+The `@feathersjs/knex` adapter provides SQL database integration through Knex.js, supporting PostgreSQL, MySQL, SQLite, MSSQL, Oracle, and other SQL databases with transactions, joins, and advanced querying.
+
+## Installation
+
+<Steps>
+  <Step title="Install dependencies">
+    Install the Knex adapter, Knex.js, and your database driver:
+
+    <Tabs>
+      <Tab title="PostgreSQL">
+        ```bash
+        npm install @feathersjs/knex knex pg
+        ```
+      </Tab>
+      <Tab title="MySQL">
+        ```bash
+        npm install @feathersjs/knex knex mysql2
+        ```
+      </Tab>
+      <Tab title="SQLite">
+        ```bash
+        npm install @feathersjs/knex knex sqlite3
+        ```
+      </Tab>
+      <Tab title="MSSQL">
+        ```bash
+        npm install @feathersjs/knex knex mssql
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Configure Knex">
+    Create a Knex instance:
+
+    <CodeGroup>
+    ```typescript PostgreSQL
+    import knex from 'knex'
+
+    const db = knex({
+      client: 'pg',
+      connection: {
+        host: 'localhost',
+        port: 5432,
+        user: 'postgres',
+        password: 'password',
+        database: 'myapp'
+      },
+      pool: {
+        min: 2,
+        max: 10
+      }
+    })
+    ```
+
+    ```typescript MySQL
+    import knex from 'knex'
+
+    const db = knex({
+      client: 'mysql2',
+      connection: {
+        host: 'localhost',
+        port: 3306,
+        user: 'root',
+        password: 'password',
+        database: 'myapp'
+      }
+    })
+    ```
+
+    ```typescript SQLite
+    import knex from 'knex'
+
+    const db = knex({
+      client: 'sqlite3',
+      connection: {
+        filename: './mydb.sqlite'
+      },
+      useNullAsDefault: true
+    })
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Create a service">
+    Create a service using the Knex adapter:
+
+    ```typescript
+    import { KnexService } from '@feathersjs/knex'
+
+    class UserService extends KnexService {
+      // Custom methods here
+    }
+
+    app.use('users', new UserService({
+      Model: db,
+      name: 'users',
+      paginate: {
+        default: 10,
+        max: 50
+      }
+    }))
+    ```
+  </Step>
+</Steps>
+
+## Configuration
+
+### Service Options
+
+The Knex adapter requires these options:
+
+```typescript
+interface KnexAdapterOptions {
+  Model: Knex                    // Knex instance
+  name: string                   // Table name
+  id?: string                    // Primary key (default: 'id')
+  schema?: string                // Database schema
+  paginate?: PaginationOptions   // Pagination settings
+  multi?: boolean | string[]     // Allow multi operations
+  events?: string[]              // Custom events
+  extendedOperators?: object     // Custom query operators
+}
+```
+
+### Example Configuration
+
+<CodeGroup>
+```typescript Basic
+import { KnexService } from '@feathersjs/knex'
+
+app.use('messages', new KnexService({
+  Model: db,
+  name: 'messages'
+}))
+```
+
+```typescript With Schema
+// PostgreSQL with schema
+app.use('users', new KnexService({
+  Model: db,
+  name: 'users',
+  schema: 'public',
+  id: 'id',
+  paginate: {
+    default: 20,
+    max: 100
+  }
+}))
+```
+
+```typescript Custom Class
+import { KnexService } from '@feathersjs/knex'
+import type { Params, Id } from '@feathersjs/feathers'
+
+interface User {
+  id: number
+  email: string
+  name: string
+  createdAt: Date
+}
+
+class UserService extends KnexService<User> {
+  async create(data: Partial<User>, params?: Params) {
+    const userData = {
+      ...data,
+      createdAt: new Date()
+    }
+    return super.create(userData, params)
+  }
+}
+
+app.use('users', new UserService({
+  Model: db,
+  name: 'users'
+}))
+```
+</CodeGroup>
+
+## Querying
+
+### Basic Queries
+
+The Knex adapter supports all standard Feathers query operators:
+
+<CodeGroup>
+```typescript Find
+// Find all users
+const users = await app.service('users').find({
+  query: {}
+})
+
+// Find with filters
+const activeUsers = await app.service('users').find({
+  query: {
+    status: 'active',
+    age: { $gte: 18 }
+  }
+})
+```
+
+```typescript Get
+// Get by ID
+const user = await app.service('users').get(1)
+
+// Get with query constraints
+const user = await app.service('users').get(userId, {
+  query: {
+    status: 'active'
+  }
+})
+```
+
+```typescript Complex Queries
+// Logical operators
+const results = await app.service('users').find({
+  query: {
+    $or: [
+      { role: 'admin' },
+      { $and: [{ verified: true }, { age: { $gte: 21 } }] }
+    ]
+  }
+})
+
+// Array operations
+const users = await app.service('users').find({
+  query: {
+    role: { $in: ['admin', 'moderator'] },
+    status: { $nin: ['banned', 'deleted'] }
+  }
+})
+```
+
+```typescript Sorting & Pagination
+const results = await app.service('users').find({
+  query: {
+    status: 'active',
+    $sort: { createdAt: -1 },
+    $limit: 20,
+    $skip: 0,
+    $select: ['name', 'email', 'createdAt']
+  }
+})
+```
+</CodeGroup>
+
+### SQL-Specific Operators
+
+The Knex adapter includes SQL-specific operators:
+
+<CodeGroup>
+```typescript LIKE
+// Case-sensitive pattern matching
+const users = await app.service('users').find({
+  query: {
+    name: { $like: '%John%' }
+  }
+})
+
+// NOT LIKE
+const users = await app.service('users').find({
+  query: {
+    email: { $notlike: '%spam.com' }
+  }
+})
+```
+
+```typescript ILIKE (PostgreSQL)
+// Case-insensitive pattern matching
+const users = await app.service('users').find({
+  query: {
+    name: { $ilike: '%john%' }
+  }
+})
+```
+
+```typescript Custom Operators
+// Define custom operators
+app.use('users', new KnexService({
+  Model: db,
+  name: 'users',
+  extendedOperators: {
+    $regex: '~',        // PostgreSQL regex
+    $iregex: '~*'       // Case-insensitive regex
+  }
+}))
+
+// Use custom operators
+const users = await app.service('users').find({
+  query: {
+    email: { $regex: '^[a-z]+@example\\.com$' }
+  }
+})
+```
+</CodeGroup>
+
+### Raw Knex Queries
+
+Pass custom Knex query builders:
+
+```typescript
+import { KnexAdapterParams } from '@feathersjs/knex'
+
+// Use custom Knex query
+const params: KnexAdapterParams = {
+  knex: db('users')
+    .select('users.*', 'profiles.bio')
+    .leftJoin('profiles', 'users.id', 'profiles.userId')
+    .where('users.status', 'active')
+}
+
+const results = await app.service('users').find(params)
+```
+
+## Data Manipulation
+
+### Create
+
+<CodeGroup>
+```typescript Single Row
+const user = await app.service('users').create({
+  name: 'Alice',
+  email: 'alice@example.com',
+  age: 25
+})
+```
+
+```typescript Multiple Rows
+const users = await app.service('users').create([
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' }
+])
+```
+
+```typescript With $select
+// Return only specific fields
+const user = await app.service('users').create(
+  {
+    name: 'Alice',
+    email: 'alice@example.com',
+    password: 'hashed_password'
+  },
+  {
+    query: {
+      $select: ['id', 'name', 'email']
+    }
+  }
+)
+```
+</CodeGroup>
+
+### Update
+
+```typescript
+// Replace entire row (except ID)
+const updated = await app.service('users').update(
+  1,
+  {
+    name: 'Alice Updated',
+    email: 'alice.new@example.com',
+    age: 26
+  }
+)
+```
+
+### Patch
+
+<CodeGroup>
+```typescript Single Row
+// Partial update
+const patched = await app.service('users').patch(
+  1,
+  { status: 'verified' }
+)
+```
+
+```typescript Multiple Rows
+// Enable multi first
+app.use('users', new KnexService({
+  Model: db,
+  name: 'users',
+  multi: ['patch']
+}))
+
+// Patch multiple
+const results = await app.service('users').patch(
+  null,
+  { verified: true },
+  {
+    query: { email: { $ne: null } }
+  }
+)
+```
+</CodeGroup>
+
+### Remove
+
+<CodeGroup>
+```typescript Single Row
+const removed = await app.service('users').remove(1)
+```
+
+```typescript Multiple Rows
+// Enable multi operations
+app.use('users', new KnexService({
+  Model: db,
+  name: 'users',
+  multi: ['remove']
+}))
+
+// Remove multiple
+const removed = await app.service('users').remove(null, {
+  query: { status: 'deleted' }
+})
+```
+</CodeGroup>
+
+## Transactions
+
+The Knex adapter provides powerful transaction support:
+
+### Using Transaction Hooks
+
+<CodeGroup>
+```typescript Basic Transaction
+import { transaction } from '@feathersjs/knex'
+
+app.service('accounts').hooks({
+  before: {
+    create: [transaction.start()]
+  },
+  after: {
+    create: [transaction.end()]
+  },
+  error: {
+    create: [transaction.rollback()]
+  }
+})
+
+// Transaction automatically managed
+const account = await app.service('accounts').create({
+  balance: 1000
+})
+```
+
+```typescript Multi-Service Transaction
+import { transaction } from '@feathersjs/knex'
+
+// Start transaction in first service
+app.service('orders').hooks({
+  before: {
+    create: [transaction.start()]
+  },
+  after: {
+    create: [
+      async (context) => {
+        // Use same transaction in another service
+        await app.service('inventory').patch(
+          context.result.productId,
+          { quantity: { $dec: context.result.quantity } },
+          {
+            transaction: context.params.transaction
+          }
+        )
+        return context
+      },
+      transaction.end()
+    ]
+  },
+  error: {
+    create: [transaction.rollback()]
+  }
+})
+```
+
+```typescript Manual Transaction
+import { Knex } from 'knex'
+
+const trx = await db.transaction()
+
+try {
+  const user = await app.service('users').create(
+    { name: 'Alice', email: 'alice@example.com' },
+    { transaction: { trx } }
+  )
+  
+  await app.service('profiles').create(
+    { userId: user.id, bio: 'Hello' },
+    { transaction: { trx } }
+  )
+  
+  await trx.commit()
+} catch (error) {
+  await trx.rollback()
+  throw error
+}
+```
+</CodeGroup>
+
+### Transaction Context
+
+Transactions maintain context across hooks:
+
+```typescript
+app.service('transfers').hooks({
+  before: {
+    create: [
+      transaction.start(),
+      async (context) => {
+        const { fromAccount, toAccount, amount } = context.data
+        
+        // Deduct from source account (uses transaction)
+        await app.service('accounts').patch(
+          fromAccount,
+          { balance: db.raw('balance - ?', [amount]) },
+          context.params  // Transaction passed automatically
+        )
+        
+        // Add to destination account (uses same transaction)
+        await app.service('accounts').patch(
+          toAccount,
+          { balance: db.raw('balance + ?', [amount]) },
+          context.params
+        )
+        
+        return context
+      }
+    ]
+  },
+  after: {
+    create: [transaction.end()]
+  },
+  error: {
+    create: [transaction.rollback()]
+  }
+})
+```
+
+## Advanced Features
+
+### Table Schemas
+
+Create and manage database schemas:
+
+```typescript
+// Create table
+await db.schema.createTable('users', (table) => {
+  table.increments('id').primary()
+  table.string('email').unique().notNullable()
+  table.string('name').notNullable()
+  table.integer('age')
+  table.string('status').defaultTo('active')
+  table.timestamps(true, true)
+})
+
+// Add indexes
+await db.schema.alterTable('users', (table) => {
+  table.index('email')
+  table.index(['status', 'createdAt'])
+})
+```
+
+### Joins and Relations
+
+Perform joins using custom Knex queries:
+
+```typescript
+const usersWithProfiles = await app.service('users').find({
+  knex: db('users')
+    .select(
+      'users.id',
+      'users.name',
+      'users.email',
+      'profiles.bio',
+      'profiles.avatar'
+    )
+    .leftJoin('profiles', 'users.id', 'profiles.userId')
+    .where('users.status', 'active')
+})
+```
+
+### Field Selection
+
+```typescript
+// Select specific fields
+const users = await app.service('users').find({
+  query: {
+    $select: ['id', 'name', 'email'],
+    status: 'active'
+  }
+})
+
+// The adapter automatically includes the ID field
+```
+
+## Type Safety
+
+Full TypeScript support with generics:
+
+```typescript
+import { KnexService, KnexAdapterParams } from '@feathersjs/knex'
+import type { Params } from '@feathersjs/feathers'
+import type { Knex } from 'knex'
+
+interface User {
+  id: number
+  email: string
+  name: string
+  age: number
+  status: 'active' | 'inactive'
+  createdAt: Date
+  updatedAt: Date
+}
+
+interface UserData {
+  email: string
+  name: string
+  age: number
+  status?: 'active' | 'inactive'
+}
+
+interface UserParams extends KnexAdapterParams {
+  user?: User
+}
+
+class UserService extends KnexService<User, UserData, UserParams> {
+  async find(params?: UserParams) {
+    // Fully typed
+    return super.find(params)
+  }
+}
+
+const db: Knex = knex({ /* config */ })
+
+app.use('users', new UserService({
+  Model: db,
+  name: 'users'
+}))
+
+// Type-safe usage
+const users: User[] = await app.service('users').find()
+const user: User = await app.service('users').get(1)
+```
+
+## Error Handling
+
+The adapter converts SQL errors to Feathers errors:
+
+```typescript
+import { errorHandler } from '@feathersjs/knex'
+
+try {
+  await app.service('users').create({
+    email: 'duplicate@example.com'
+  })
+} catch (error) {
+  // SQL errors are converted:
+  // Unique constraint -> Conflict (409)
+  // Foreign key -> BadRequest (400)
+  // Not found -> NotFound (404)
+}
+```
+
+## Connection Pooling
+
+Configure connection pooling for better performance:
+
+```typescript
+const db = knex({
+  client: 'pg',
+  connection: process.env.DATABASE_URL,
+  pool: {
+    min: 2,
+    max: 10,
+    createTimeoutMillis: 3000,
+    acquireTimeoutMillis: 30000,
+    idleTimeoutMillis: 30000,
+    reapIntervalMillis: 1000,
+    createRetryIntervalMillis: 100
+  }
+})
+
+// Clean up on shutdown
+process.on('SIGTERM', async () => {
+  await db.destroy()
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="MongoDB Adapter" icon="leaf" href="/guides/databases/mongodb">
+    Learn about the MongoDB adapter
+  </Card>
+  <Card title="Common Patterns" icon="code" href="/guides/databases/adapters">
+    Explore adapter patterns
+  </Card>
+  <Card title="Hooks" icon="hook" href="/guides/basics/hooks">
+    Add hooks to your services
+  </Card>
+  <Card title="Validation" icon="shield" href="/guides/basics/schemas">
+    Validate your data with schemas
+  </Card>
+</CardGroup>

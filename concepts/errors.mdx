@@ -1,0 +1,684 @@
+---
+title: Errors
+description: Master error handling in Feathers with built-in error classes, HTTP status codes, and error hooks
+---
+
+Feathers provides a comprehensive set of error classes that map to HTTP status codes and can be used throughout your application for consistent error handling.
+
+## FeathersError Class
+
+All Feathers errors extend the base `FeathersError` class:
+
+```typescript index.ts:17-65
+class FeathersError extends Error {
+  name: string          // Error name (e.g., 'BadRequest')
+  message: string       // Error message
+  code: number          // HTTP status code
+  className: string     // kebab-case name (e.g., 'bad-request')
+  data?: any           // Additional error data
+  errors?: any         // Validation errors
+}
+```
+
+### Creating Errors
+
+<CodeGroup>
+```typescript Simple Message
+import { BadRequest } from '@feathersjs/errors'
+
+throw new BadRequest('Email is required')
+```
+
+```typescript With Data
+import { BadRequest } from '@feathersjs/errors'
+
+throw new BadRequest('Validation failed', {
+  email: 'Invalid email format',
+  password: 'Password too short'
+})
+```
+
+```typescript With Error Object
+import { BadRequest } from '@feathersjs/errors'
+
+throw new BadRequest({
+  message: 'Validation failed',
+  errors: {
+    email: 'Invalid email format',
+    password: 'Must be at least 8 characters'
+  }
+})
+```
+</CodeGroup>
+
+### Error Serialization
+
+Errors automatically serialize to JSON:
+
+```typescript index.ts:47-64
+const error = new BadRequest('Validation failed', {
+  email: 'Required field'
+})
+
+const json = error.toJSON()
+// {
+//   name: 'BadRequest',
+//   message: 'Validation failed',
+//   code: 400,
+//   className: 'bad-request',
+//   data: {
+//     email: 'Required field'
+//   }
+// }
+```
+
+## Built-in Error Types
+
+Feathers includes error classes for all common HTTP status codes:
+
+### Client Errors (4xx)
+
+<Tabs>
+  <Tab title="400 Bad Request">
+```typescript index.ts:67-71
+import { BadRequest } from '@feathersjs/errors'
+
+// Invalid input or malformed request
+throw new BadRequest('Invalid email format')
+
+throw new BadRequest('Validation failed', {
+  errors: [
+    { field: 'email', message: 'Required' },
+    { field: 'age', message: 'Must be a number' }
+  ]
+})
+```
+  </Tab>
+  <Tab title="401 Not Authenticated">
+```typescript index.ts:73-78
+import { NotAuthenticated } from '@feathersjs/errors'
+
+// Missing or invalid authentication
+throw new NotAuthenticated('No token provided')
+
+throw new NotAuthenticated('Invalid credentials')
+
+throw new NotAuthenticated('Token expired', {
+  expiredAt: '2024-01-01T00:00:00Z'
+})
+```
+  </Tab>
+  <Tab title="403 Forbidden">
+```typescript index.ts:88-92
+import { Forbidden } from '@feathersjs/errors'
+
+// Authenticated but not authorized
+throw new Forbidden('You do not have permission to perform this action')
+
+throw new Forbidden('Admin access required')
+
+throw new Forbidden('Access denied', {
+  requiredRole: 'admin',
+  currentRole: 'user'
+})
+```
+  </Tab>
+  <Tab title="404 Not Found">
+```typescript index.ts:94-98
+import { NotFound } from '@feathersjs/errors'
+
+// Resource doesn't exist
+throw new NotFound('User not found')
+
+throw new NotFound(`Post with ID ${id} not found`)
+
+throw new NotFound('Resource not found', {
+  resource: 'posts',
+  id: 123
+})
+```
+  </Tab>
+  <Tab title="409 Conflict">
+```typescript index.ts:122-126
+import { Conflict } from '@feathersjs/errors'
+
+// Resource conflict
+throw new Conflict('Email already exists')
+
+throw new Conflict('Username taken')
+
+throw new Conflict('Resource conflict', {
+  field: 'email',
+  value: 'user@example.com'
+})
+```
+  </Tab>
+  <Tab title="422 Unprocessable">
+```typescript index.ts:143-147
+import { Unprocessable } from '@feathersjs/errors'
+
+// Request was well-formed but semantically invalid
+throw new Unprocessable('Invalid business logic', {
+  reason: 'Cannot delete user with active subscriptions'
+})
+
+throw new Unprocessable('Validation error', {
+  errors: [
+    { field: 'endDate', message: 'Must be after start date' }
+  ]
+})
+```
+  </Tab>
+  <Tab title="429 Too Many Requests">
+```typescript index.ts:150-154
+import { TooManyRequests } from '@feathersjs/errors'
+
+// Rate limit exceeded
+throw new TooManyRequests('Rate limit exceeded', {
+  limit: 100,
+  remaining: 0,
+  resetAt: Date.now() + 3600000
+})
+```
+  </Tab>
+</Tabs>
+
+### Server Errors (5xx)
+
+<Tabs>
+  <Tab title="500 General Error">
+```typescript index.ts:157-162
+import { GeneralError } from '@feathersjs/errors'
+
+// Generic server error
+throw new GeneralError('Something went wrong')
+
+throw new GeneralError('Database connection failed')
+```
+  </Tab>
+  <Tab title="501 Not Implemented">
+```typescript index.ts:164-168
+import { NotImplemented } from '@feathersjs/errors'
+
+// Feature not implemented
+throw new NotImplemented('This feature is not yet available')
+
+throw new NotImplemented('Method not supported')
+```
+  </Tab>
+  <Tab title="503 Unavailable">
+```typescript index.ts:178-183
+import { Unavailable } from '@feathersjs/errors'
+
+// Service temporarily unavailable
+throw new Unavailable('Service is under maintenance')
+
+throw new Unavailable('Database unavailable', {
+  retryAfter: 300 // seconds
+})
+```
+  </Tab>
+</Tabs>
+
+### Complete List
+
+```typescript index.ts:221-256
+import {
+  BadRequest,           // 400
+  NotAuthenticated,     // 401
+  PaymentError,         // 402
+  Forbidden,            // 403
+  NotFound,             // 404
+  MethodNotAllowed,     // 405
+  NotAcceptable,        // 406
+  Timeout,              // 408
+  Conflict,             // 409
+  Gone,                 // 410
+  LengthRequired,       // 411
+  Unprocessable,        // 422
+  TooManyRequests,      // 429
+  GeneralError,         // 500
+  NotImplemented,       // 501
+  BadGateway,           // 502
+  Unavailable           // 503
+} from '@feathersjs/errors'
+```
+
+## Using Errors in Services
+
+### Throwing Errors
+
+```typescript
+import { NotFound, BadRequest, Forbidden } from '@feathersjs/errors'
+
+class UserService {
+  async get(id, params) {
+    const user = await database.users.findById(id)
+    
+    if (!user) {
+      throw new NotFound(`User ${id} not found`)
+    }
+    
+    return user
+  }
+  
+  async create(data, params) {
+    if (!data.email) {
+      throw new BadRequest('Email is required')
+    }
+    
+    const existing = await database.users.findByEmail(data.email)
+    
+    if (existing) {
+      throw new Conflict('Email already registered')
+    }
+    
+    return database.users.create(data)
+  }
+  
+  async remove(id, params) {
+    const { user } = params
+    
+    if (!user || user.role !== 'admin') {
+      throw new Forbidden('Only admins can delete users')
+    }
+    
+    return database.users.delete(id)
+  }
+}
+```
+
+## Error Hooks
+
+Handle errors using error hooks:
+
+```typescript
+service.hooks({
+  error: {
+    all: [
+      async (context) => {
+        // Log all errors
+        console.error(`Error in ${context.path}.${context.method}:`, context.error)
+        return context
+      }
+    ],
+    
+    get: [
+      async (context) => {
+        // Transform specific errors
+        if (context.error.code === 'ENOTFOUND') {
+          context.error = new NotFound('Resource not found')
+        }
+        return context
+      }
+    ],
+    
+    create: [
+      async (context) => {
+        // Handle validation errors
+        if (context.error.name === 'ValidationError') {
+          context.error = new BadRequest('Validation failed', {
+            errors: context.error.errors
+          })
+        }
+        return context
+      }
+    ]
+  }
+})
+```
+
+### Application-Level Error Handling
+
+```typescript
+app.hooks({
+  error: {
+    all: [
+      async (context) => {
+        // Global error handling
+        console.error('Error:', {
+          service: context.path,
+          method: context.method,
+          error: context.error.message,
+          stack: context.error.stack
+        })
+        
+        // Send to error tracking service
+        if (process.env.NODE_ENV === 'production') {
+          await errorTracker.captureException(context.error, {
+            tags: {
+              service: context.path,
+              method: context.method
+            },
+            user: context.params.user
+          })
+        }
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+### Recovering from Errors
+
+Error hooks can recover from errors by setting `context.result`:
+
+```typescript
+service.hooks({
+  error: {
+    get: [
+      async (context) => {
+        if (context.error.code === 404) {
+          // Return default value instead of error
+          context.result = {
+            id: context.id,
+            name: 'Unknown',
+            isDefault: true
+          }
+          
+          // Clear the error
+          delete context.error
+        }
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+## Error Conversion
+
+Convert non-Feathers errors to FeathersError:
+
+```typescript index.ts:258-273
+import { convert } from '@feathersjs/errors'
+
+try {
+  await externalAPI.call()
+} catch (error) {
+  // Convert to FeathersError
+  throw convert(error)
+}
+
+// Or in an error hook
+service.hooks({
+  error: {
+    all: [
+      async (context) => {
+        context.error = convert(context.error)
+        return context
+      }
+    ]
+  }
+})
+```
+
+## Validation Errors
+
+Structure validation errors for clarity:
+
+```typescript
+import { BadRequest } from '@feathersjs/errors'
+
+const validateUser = async (context) => {
+  const { data } = context
+  const errors = []
+  
+  if (!data.email) {
+    errors.push({ field: 'email', message: 'Email is required' })
+  } else if (!isValidEmail(data.email)) {
+    errors.push({ field: 'email', message: 'Invalid email format' })
+  }
+  
+  if (!data.password) {
+    errors.push({ field: 'password', message: 'Password is required' })
+  } else if (data.password.length < 8) {
+    errors.push({ field: 'password', message: 'Must be at least 8 characters' })
+  }
+  
+  if (!data.age) {
+    errors.push({ field: 'age', message: 'Age is required' })
+  } else if (data.age < 18) {
+    errors.push({ field: 'age', message: 'Must be 18 or older' })
+  }
+  
+  if (errors.length > 0) {
+    throw new BadRequest('Validation failed', { errors })
+  }
+  
+  return context
+}
+
+service.hooks({
+  before: {
+    create: [validateUser]
+  }
+})
+```
+
+## Database Error Handling
+
+Transform database errors to Feathers errors:
+
+```typescript
+service.hooks({
+  error: {
+    all: [
+      async (context) => {
+        const error = context.error
+        
+        // MongoDB duplicate key error
+        if (error.code === 11000) {
+          context.error = new Conflict('Duplicate entry', {
+            field: Object.keys(error.keyPattern)[0]
+          })
+        }
+        
+        // PostgreSQL unique violation
+        if (error.code === '23505') {
+          context.error = new Conflict('Value already exists')
+        }
+        
+        // Connection errors
+        if (error.code === 'ECONNREFUSED') {
+          context.error = new Unavailable('Database unavailable')
+        }
+        
+        // Foreign key violation
+        if (error.code === '23503') {
+          context.error = new BadRequest('Referenced record does not exist')
+        }
+        
+        return context
+      }
+    ]
+  }
+})
+```
+
+## Real-World Patterns
+
+### Authentication Errors
+
+```typescript
+const authenticate = async (context) => {
+  const token = context.params.headers?.authorization?.replace('Bearer ', '')
+  
+  if (!token) {
+    throw new NotAuthenticated('No authentication token provided')
+  }
+  
+  try {
+    const decoded = await verifyToken(token)
+    context.params.user = decoded
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      throw new NotAuthenticated('Token expired', {
+        expiredAt: error.expiredAt
+      })
+    }
+    
+    throw new NotAuthenticated('Invalid token')
+  }
+  
+  return context
+}
+```
+
+### Authorization Errors
+
+```typescript
+const authorize = (...allowedRoles) => {
+  return async (context) => {
+    const { user } = context.params
+    
+    if (!user) {
+      throw new NotAuthenticated('Authentication required')
+    }
+    
+    if (!allowedRoles.includes(user.role)) {
+      throw new Forbidden('Insufficient permissions', {
+        required: allowedRoles,
+        current: user.role
+      })
+    }
+    
+    return context
+  }
+}
+
+service.hooks({
+  before: {
+    create: [authorize('admin', 'editor')],
+    remove: [authorize('admin')]
+  }
+})
+```
+
+### Rate Limiting Errors
+
+```typescript
+const rateLimit = new Map()
+
+const checkRateLimit = async (context) => {
+  const userId = context.params.user?.id || context.params.ip
+  const key = `${userId}:${context.method}`
+  
+  const now = Date.now()
+  const windowMs = 60 * 1000 // 1 minute
+  const maxRequests = 100
+  
+  const userRequests = rateLimit.get(key) || { count: 0, resetAt: now + windowMs }
+  
+  if (now > userRequests.resetAt) {
+    userRequests.count = 0
+    userRequests.resetAt = now + windowMs
+  }
+  
+  userRequests.count++
+  rateLimit.set(key, userRequests)
+  
+  if (userRequests.count > maxRequests) {
+    throw new TooManyRequests('Rate limit exceeded', {
+      limit: maxRequests,
+      remaining: 0,
+      resetAt: userRequests.resetAt
+    })
+  }
+  
+  return context
+}
+```
+
+## Error Logging
+
+```typescript
+const logError = async (context) => {
+  const { error, path, method, params } = context
+  
+  const logData = {
+    timestamp: new Date().toISOString(),
+    service: path,
+    method,
+    error: {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    },
+    user: params.user?.id,
+    provider: params.provider,
+    ip: params.ip
+  }
+  
+  // Log to console in development
+  if (process.env.NODE_ENV === 'development') {
+    console.error('Service Error:', JSON.stringify(logData, null, 2))
+  }
+  
+  // Send to logging service in production
+  if (process.env.NODE_ENV === 'production') {
+    await loggingService.error(logData)
+  }
+  
+  return context
+}
+
+app.hooks({
+  error: {
+    all: [logError]
+  }
+})
+```
+
+## Client-Side Error Handling
+
+```typescript
+// Client code
+try {
+  const user = await app.service('users').create(data)
+} catch (error) {
+  // Feathers errors are serialized
+  console.error('Error:', error.message)
+  console.error('Code:', error.code)
+  console.error('Data:', error.data)
+  
+  if (error.code === 400) {
+    // Show validation errors
+    error.data?.errors?.forEach(err => {
+      showFieldError(err.field, err.message)
+    })
+  } else if (error.code === 401) {
+    // Redirect to login
+    router.push('/login')
+  } else if (error.code === 403) {
+    // Show permission denied message
+    showToast('You do not have permission')
+  }
+}
+```
+
+## Best Practices
+
+1. **Use appropriate error types** - Choose the most specific error class
+2. **Include helpful messages** - Make error messages clear and actionable
+3. **Add context with data** - Include relevant information in `data` property
+4. **Handle errors at the right level** - Service-level vs application-level
+5. **Log errors properly** - Include enough context for debugging
+6. **Transform technical errors** - Convert database/API errors to user-friendly messages
+7. **Validate early** - Catch errors in before hooks before hitting the database
+8. **Don't leak sensitive info** - Be careful what you include in error messages
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Hooks" icon="hook" href="/concepts/hooks">
+    Learn more about error hooks
+  </Card>
+  <Card title="Validation" icon="check" href="/guides/validation">
+    Implement comprehensive validation
+  </Card>
+</CardGroup>

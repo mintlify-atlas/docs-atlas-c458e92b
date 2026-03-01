@@ -1,0 +1,431 @@
+---
+title: "Authentication Configuration"
+description: "Configure JWT authentication, local authentication, and OAuth providers in Feathers"
+---
+
+Authentication configuration controls how users authenticate with your Feathers application. It supports JWT tokens, local authentication (email/password), and OAuth providers.
+
+## Configuration Location
+
+Authentication settings are stored in `config/default.json` and generated when you run the authentication generator:
+
+```bash
+feathers generate authentication
+```
+
+## Authentication Schema
+
+The authentication configuration can be validated using schemas:
+
+<CodeGroup>
+
+```typescript TypeBox
+import { Type } from '@feathersjs/typebox'
+
+export const authenticationSettingsSchema = Type.Object({
+  secret: Type.String({ description: 'The JWT signing secret' }),
+  entity: Type.Optional(
+    Type.Union([
+      Type.String({ description: 'The name of the authentication entity (e.g. user)' }),
+      Type.Null()
+    ])
+  ),
+  entityId: Type.Optional(Type.String()),
+  service: Type.Optional(Type.String()),
+  authStrategies: Type.Array(Type.String()),
+  jwtOptions: Type.Optional(Type.Object({})),
+  local: Type.Optional(
+    Type.Object({
+      usernameField: Type.String(),
+      passwordField: Type.String()
+    })
+  )
+})
+```
+
+```typescript JSON Schema
+export const authenticationSettingsSchema = {
+  type: 'object',
+  required: ['secret', 'entity', 'authStrategies'],
+  properties: {
+    secret: {
+      type: 'string',
+      description: 'The JWT signing secret'
+    },
+    entity: {
+      oneOf: [
+        { type: 'null' },
+        { type: 'string' }
+      ],
+      description: 'The name of the authentication entity (e.g. user)'
+    },
+    authStrategies: {
+      type: 'array',
+      items: { type: 'string' }
+    }
+  }
+} as const
+```
+
+</CodeGroup>
+
+## Core Settings
+
+<ParamField path="authentication.secret" type="string" required>
+  The secret key used to sign and verify JWT tokens. This should be a long, random string.
+  
+  **Environment Variable:** `FEATHERS_SECRET`
+  
+  **Security:** Never commit this to version control. Always use environment variables in production.
+  
+  **Example:** Generated automatically as a 32-character base64 string
+</ParamField>
+
+<ParamField path="authentication.entity" type="string | null">
+  The name of the entity (e.g., 'user') that is authenticated. Set to `null` for no entity.
+  
+  **Default:** The service name (e.g., `user`)
+</ParamField>
+
+<ParamField path="authentication.entityId" type="string">
+  The name of the id property on the entity.
+  
+  **Default:** `id` (or `_id` for MongoDB)
+</ParamField>
+
+<ParamField path="authentication.service" type="string">
+  The path of the service that provides the authentication entity.
+  
+  **Example:** `users`
+</ParamField>
+
+<ParamField path="authentication.authStrategies" type="string[]" required>
+  List of authentication strategy names that are allowed to create JWT access tokens.
+  
+  **Default:** `['jwt', 'local']`
+  
+  **Common values:** `jwt`, `local`, `google`, `github`, `facebook`, `twitter`, `auth0`
+</ParamField>
+
+<ParamField path="authentication.parseStrategies" type="string[]">
+  List of strategy names that should parse HTTP headers for authentication information.
+  
+  **Default:** Same as `authStrategies`
+</ParamField>
+
+## JWT Settings
+
+<ParamField path="authentication.jwtOptions" type="object">
+  Options passed to the JWT library for token generation and verification.
+  
+  <Expandable title="properties">
+    <ParamField path="authentication.jwtOptions.header" type="object">
+      Header claims for the JWT token.
+      
+      <Expandable title="properties">
+        <ParamField path="authentication.jwtOptions.header.typ" type="string">
+          Token type.
+          
+          **Default:** `access`
+        </ParamField>
+      </Expandable>
+    </ParamField>
+    
+    <ParamField path="authentication.jwtOptions.audience" type="string">
+      The intended audience for the token.
+      
+      **Example:** `https://yourdomain.com`
+    </ParamField>
+    
+    <ParamField path="authentication.jwtOptions.algorithm" type="string">
+      The signing algorithm to use.
+      
+      **Default:** `HS256`
+      
+      **Options:** `HS256`, `HS384`, `HS512`, `RS256`, etc.
+    </ParamField>
+    
+    <ParamField path="authentication.jwtOptions.expiresIn" type="string">
+      How long the token is valid.
+      
+      **Default:** `1d` (1 day)
+      
+      **Format:** Use strings like `2h`, `7d`, `30m`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="authentication.jwt" type="object">
+  Configuration for JWT parsing from HTTP headers.
+  
+  <Expandable title="properties">
+    <ParamField path="authentication.jwt.header" type="string">
+      The HTTP header containing the JWT.
+      
+      **Default:** `Authorization`
+    </ParamField>
+    
+    <ParamField path="authentication.jwt.schemes" type="string[]">
+      Array of authentication schemes to support.
+      
+      **Default:** `['Bearer', 'JWT']`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Local Authentication Settings
+
+<ParamField path="authentication.local" type="object">
+  Configuration for email/password authentication.
+  
+  <Expandable title="properties">
+    <ParamField path="authentication.local.usernameField" type="string" required>
+      The field name for the username (typically email).
+      
+      **Default:** `email`
+    </ParamField>
+    
+    <ParamField path="authentication.local.passwordField" type="string" required>
+      The field name for the password.
+      
+      **Default:** `password`
+    </ParamField>
+    
+    <ParamField path="authentication.local.hashSize" type="number">
+      The BCrypt salt length for password hashing.
+      
+      **Default:** `10`
+    </ParamField>
+    
+    <ParamField path="authentication.local.errorMessage" type="string">
+      The error message returned on authentication failure.
+      
+      **Default:** `Invalid login`
+    </ParamField>
+    
+    <ParamField path="authentication.local.entityUsernameField" type="string">
+      Name of the username field on the entity if different from the request field.
+      
+      **Use case:** When the entity stores `email` but authentication expects `username`
+    </ParamField>
+    
+    <ParamField path="authentication.local.entityPasswordField" type="string">
+      Name of the password field on the entity if different from the request field.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## OAuth Settings
+
+<ParamField path="authentication.oauth" type="object">
+  Configuration for OAuth providers (Google, GitHub, Facebook, etc.).
+  
+  <Expandable title="properties">
+    <ParamField path="authentication.oauth.redirect" type="string">
+      The URL to redirect to after successful OAuth authentication.
+      
+      **Example:** `http://localhost:3030/`
+    </ParamField>
+    
+    <ParamField path="authentication.oauth.origins" type="string[]">
+      Allowed origins for OAuth redirects.
+      
+      **Example:** `['http://localhost:3030']`
+    </ParamField>
+    
+    <ParamField path="authentication.oauth.defaults" type="object">
+      Default configuration for all OAuth providers.
+      
+      <Expandable title="properties">
+        <ParamField path="authentication.oauth.defaults.key" type="string">
+          Default OAuth client ID (can be overridden per provider).
+        </ParamField>
+        
+        <ParamField path="authentication.oauth.defaults.secret" type="string">
+          Default OAuth client secret (can be overridden per provider).
+        </ParamField>
+      </Expandable>
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Provider-Specific Settings
+
+Each OAuth provider (google, github, facebook, twitter, auth0) has the same configuration structure:
+
+<ParamField path="authentication.oauth.<provider>" type="object">
+  Configuration for a specific OAuth provider.
+  
+  <Expandable title="properties">
+    <ParamField path="authentication.oauth.<provider>.key" type="string" required>
+      The OAuth client ID from the provider.
+      
+      **Example:** `<Client ID>`
+    </ParamField>
+    
+    <ParamField path="authentication.oauth.<provider>.secret" type="string" required>
+      The OAuth client secret from the provider.
+      
+      **Example:** `<Client secret>`
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Configuration Examples
+
+<CodeGroup>
+
+```json JWT + Local Authentication
+{
+  "authentication": {
+    "entity": "user",
+    "service": "users",
+    "secret": "your-secret-here",
+    "authStrategies": ["jwt", "local"],
+    "jwtOptions": {
+      "header": {
+        "typ": "access"
+      },
+      "audience": "https://yourdomain.com",
+      "algorithm": "HS256",
+      "expiresIn": "1d"
+    },
+    "local": {
+      "usernameField": "email",
+      "passwordField": "password"
+    }
+  }
+}
+```
+
+```json JWT + OAuth Providers
+{
+  "authentication": {
+    "entity": "user",
+    "service": "users",
+    "secret": "your-secret-here",
+    "authStrategies": ["jwt", "google", "github"],
+    "jwtOptions": {
+      "header": {
+        "typ": "access"
+      },
+      "audience": "https://yourdomain.com",
+      "algorithm": "HS256",
+      "expiresIn": "7d"
+    },
+    "oauth": {
+      "redirect": "https://yourdomain.com/",
+      "google": {
+        "key": "<Google Client ID>",
+        "secret": "<Google Client Secret>"
+      },
+      "github": {
+        "key": "<GitHub Client ID>",
+        "secret": "<GitHub Client Secret>"
+      }
+    }
+  }
+}
+```
+
+```json custom-environment-variables.json
+{
+  "authentication": {
+    "secret": "FEATHERS_SECRET",
+    "oauth": {
+      "google": {
+        "key": "GOOGLE_CLIENT_ID",
+        "secret": "GOOGLE_CLIENT_SECRET"
+      },
+      "github": {
+        "key": "GITHUB_CLIENT_ID",
+        "secret": "GITHUB_CLIENT_SECRET"
+      }
+    }
+  }
+}
+```
+
+</CodeGroup>
+
+## Usage in Application
+
+The authentication service is automatically configured:
+
+```typescript src/authentication.ts
+import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+import { LocalStrategy } from '@feathersjs/authentication-local'
+import { oauth, OAuthStrategy } from '@feathersjs/authentication-oauth'
+import type { Application } from './declarations'
+
+declare module './declarations' {
+  interface ServiceTypes {
+    authentication: AuthenticationService
+  }
+}
+
+export const authentication = (app: Application) => {
+  const authentication = new AuthenticationService(app)
+
+  authentication.register('jwt', new JWTStrategy())
+  authentication.register('local', new LocalStrategy())
+  authentication.register('google', new OAuthStrategy())
+  authentication.register('github', new OAuthStrategy())
+
+  app.use('authentication', authentication)
+  app.configure(oauth())
+}
+```
+
+## Testing Authentication
+
+Test your authentication configuration:
+
+```typescript
+// Local authentication
+const { accessToken } = await app.service('authentication').create({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'password123'
+})
+
+// JWT authentication
+const { user } = await app.service('authentication').create({
+  strategy: 'jwt',
+  accessToken
+})
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use strong secrets">
+    Generate strong, random secrets for JWT signing. Use at least 32 characters and store them in environment variables.
+  </Accordion>
+  
+  <Accordion title="Set appropriate token expiration">
+    Balance security and user experience. Short-lived tokens (1-7 days) are more secure but may require more frequent logins.
+  </Accordion>
+  
+  <Accordion title="Secure OAuth credentials">
+    Never commit OAuth client IDs and secrets. Use environment variables and restrict access to production credentials.
+  </Accordion>
+  
+  <Accordion title="Use HTTPS in production">
+    Always use HTTPS for authentication endpoints in production to prevent token interception.
+  </Accordion>
+  
+  <Accordion title="Validate token audience">
+    Set the `audience` field in JWT options to your application's domain to prevent token misuse.
+  </Accordion>
+  
+  <Accordion title="Hash passwords properly">
+    Use BCrypt with appropriate salt rounds (10-12). Never store plain-text passwords.
+  </Accordion>
+</AccordionGroup>
+
+## Related Resources
+
+- [@feathersjs/authentication](https://www.npmjs.com/package/@feathersjs/authentication)
+- [@feathersjs/authentication-local](https://www.npmjs.com/package/@feathersjs/authentication-local)
+- [@feathersjs/authentication-oauth](https://www.npmjs.com/package/@feathersjs/authentication-oauth)

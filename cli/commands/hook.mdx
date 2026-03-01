@@ -1,0 +1,426 @@
+---
+title: 'feathers generate hook'
+description: 'Generate a hook for adding custom logic to your services'
+---
+
+## Overview
+
+The `feathers generate hook` command creates a new hook file with the appropriate structure for your chosen hook type. Hooks are middleware functions that can be registered before, after, or on errors of service methods.
+
+## Usage
+
+```bash
+feathers generate hook [options]
+```
+
+Or using the shorthand:
+
+```bash
+feathers g hook [options]
+```
+
+## Options
+
+<ParamField path="--name" type="string">
+  The name of the hook. Will be used for the file name and function name.
+  
+  ```bash
+  feathers generate hook --name log-request
+  ```
+  
+  The name will be converted to camelCase for the function name and kebab-case for the file name.
+</ParamField>
+
+<ParamField path="--type" type="string">
+  The type of hook to generate.
+  
+  ```bash
+  feathers generate hook --type around
+  ```
+  
+  **Choices:**
+  - `around` - Around hooks wrap service methods
+  - `regular` - Before, After, or Error hooks
+</ParamField>
+
+## Interactive Prompts
+
+### Hook Name
+
+**Prompt:** "What is the name of the hook?"
+
+The name will be transformed:
+- **camelCase** for function names (e.g., `logRequest`)
+- **kebab-case** for file names (e.g., `log-request.ts`)
+
+### Hook Type
+
+**Prompt:** "What kind of hook is it?"
+
+**Choices:**
+- **Around** - Wrap service methods with custom logic before and after execution
+- **Before, After or Error** - Run at a specific point in the service call lifecycle
+
+## Hook Types Explained
+
+### Around Hooks
+
+Around hooks wrap the service method execution and can:
+- Run code before the method executes
+- Run code after the method executes
+- Modify the context before it reaches the method
+- Modify the result after the method completes
+- Handle errors from the method
+- Skip method execution entirely
+
+**Use cases:**
+- Logging and timing
+- Caching
+- Transaction management
+- Performance monitoring
+
+### Regular Hooks
+
+Regular hooks run at specific points:
+- **Before hooks** - Run before the service method
+- **After hooks** - Run after successful service method execution
+- **Error hooks** - Run when an error occurs
+
+**Use cases:**
+- Validation
+- Data transformation
+- Populating related data
+- Sending notifications
+- Error handling
+
+## Generated Files
+
+For a hook named "log-request":
+
+```
+src/
+└── hooks/
+    └── log-request.ts
+```
+
+## Generated Code Examples
+
+### Around Hook (TypeScript)
+
+```typescript
+import { HookContext, NextFunction } from '../declarations'
+
+export const logRequest = async (context: HookContext, next: NextFunction) => {
+  console.log(`Running method ${context.method} on ${context.path}`)
+  
+  // Call next() to continue to the next hook or service method
+  await next()
+  
+  console.log(`Finished method ${context.method} on ${context.path}`)
+}
+```
+
+### Regular Hook (TypeScript)
+
+```typescript
+import { HookContext } from '../declarations'
+
+export const logRequest = async (context: HookContext) => {
+  console.log(`Running method ${context.method} on ${context.path}`)
+  return context
+}
+```
+
+## Hook Context
+
+All hooks receive a `context` object with the following properties:
+
+<ResponseField name="app" type="Application">
+  The Feathers application instance
+</ResponseField>
+
+<ResponseField name="service" type="Service">
+  The service this hook is running on
+</ResponseField>
+
+<ResponseField name="path" type="string">
+  The service path (e.g., "messages")
+</ResponseField>
+
+<ResponseField name="method" type="string">
+  The service method name (e.g., "create", "find", "get", "update", "patch", "remove")
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  The hook type: "before", "after", or "error"
+</ResponseField>
+
+<ResponseField name="params" type="Params">
+  Service call parameters, including query, user, authentication info
+</ResponseField>
+
+<ResponseField name="data" type="any">
+  Data submitted by the client (create, update, patch methods only)
+</ResponseField>
+
+<ResponseField name="id" type="string | number">
+  The resource ID (get, update, patch, remove methods only)
+</ResponseField>
+
+<ResponseField name="result" type="any">
+  The service method result (after hooks only)
+</ResponseField>
+
+<ResponseField name="error" type="Error">
+  The error object (error hooks only)
+</ResponseField>
+
+## Using Generated Hooks
+
+After generating a hook, import and register it in your service:
+
+### Around Hook Usage
+
+```typescript
+import { logRequest } from '../../hooks/log-request'
+
+export const message = (app: Application) => {
+  app.use(messagePath, new MessageService(getOptions(app)))
+
+  app.service(messagePath).hooks({
+    around: {
+      all: [logRequest],
+      // Or specific methods:
+      // find: [logRequest],
+      // create: [logRequest]
+    }
+  })
+}
+```
+
+### Regular Hook Usage
+
+```typescript
+import { logRequest } from '../../hooks/log-request'
+
+export const message = (app: Application) => {
+  app.use(messagePath, new MessageService(getOptions(app)))
+
+  app.service(messagePath).hooks({
+    before: {
+      all: [logRequest],
+      // Or specific methods:
+      // find: [logRequest],
+      // create: [logRequest]
+    },
+    after: {
+      all: [logRequest]
+    },
+    error: {
+      all: [logRequest]
+    }
+  })
+}
+```
+
+## Terminal Output Example
+
+```bash
+$ feathers generate hook
+? What is the name of the hook? log-request
+? What kind of hook is it? Around
+
+Generating hook...
+✓ Created src/hooks/log-request.ts
+
+Hook 'logRequest' created successfully!
+```
+
+## Common Hook Patterns
+
+### Validation Hook
+
+```typescript
+import { BadRequest } from '@feathersjs/errors'
+import { HookContext } from '../declarations'
+
+export const validateMessage = async (context: HookContext) => {
+  const { data } = context
+  
+  if (!data.text || data.text.trim() === '') {
+    throw new BadRequest('Message text is required')
+  }
+  
+  if (data.text.length > 400) {
+    throw new BadRequest('Message text cannot exceed 400 characters')
+  }
+  
+  return context
+}
+```
+
+### Populate Hook
+
+```typescript
+import { HookContext } from '../declarations'
+
+export const populateUser = async (context: HookContext) => {
+  const { app, result } = context
+  
+  // Populate user for a single result
+  if (result.userId) {
+    result.user = await app.service('users').get(result.userId)
+  }
+  
+  // Populate users for paginated results
+  if (result.data) {
+    result.data = await Promise.all(
+      result.data.map(async (item: any) => {
+        if (item.userId) {
+          item.user = await app.service('users').get(item.userId)
+        }
+        return item
+      })
+    )
+  }
+  
+  return context
+}
+```
+
+### Authentication Hook
+
+```typescript
+import { Forbidden } from '@feathersjs/errors'
+import { HookContext } from '../declarations'
+
+export const checkPermission = async (context: HookContext) => {
+  const { params, id } = context
+  
+  if (!params.user) {
+    throw new Forbidden('You must be logged in')
+  }
+  
+  // Check if user owns the resource
+  if (id) {
+    const resource = await context.service.get(id)
+    if (resource.userId !== params.user._id) {
+      throw new Forbidden('You do not have permission to access this resource')
+    }
+  }
+  
+  return context
+}
+```
+
+### Around Hook with Timing
+
+```typescript
+import { HookContext, NextFunction } from '../declarations'
+
+export const measurePerformance = async (context: HookContext, next: NextFunction) => {
+  const startTime = Date.now()
+  
+  console.log(`Starting ${context.method} on ${context.path}`)
+  
+  await next()
+  
+  const duration = Date.now() - startTime
+  console.log(`Completed ${context.method} on ${context.path} in ${duration}ms`)
+}
+```
+
+### Caching Hook
+
+```typescript
+import { HookContext, NextFunction } from '../declarations'
+
+const cache = new Map()
+
+export const cacheResults = async (context: HookContext, next: NextFunction) => {
+  const { method, id, path } = context
+  
+  // Only cache GET requests
+  if (method !== 'get') {
+    return next()
+  }
+  
+  const cacheKey = `${path}:${id}`
+  
+  // Return cached result if available
+  if (cache.has(cacheKey)) {
+    context.result = cache.get(cacheKey)
+    return
+  }
+  
+  await next()
+  
+  // Cache the result
+  cache.set(cacheKey, context.result)
+}
+```
+
+## Hook Registration Levels
+
+Hooks can be registered at different levels:
+
+### Application-Level Hooks
+
+Run for all services:
+
+```typescript
+app.hooks({
+  around: {
+    all: [logRequest]
+  }
+})
+```
+
+### Service-Level Hooks
+
+Run only for a specific service:
+
+```typescript
+app.service('messages').hooks({
+  before: {
+    all: [authenticate('jwt')],
+    create: [validateMessage]
+  }
+})
+```
+
+### Method-Specific Hooks
+
+Run only for specific methods:
+
+```typescript
+app.service('messages').hooks({
+  before: {
+    find: [logRequest],
+    create: [validateMessage, setTimestamp]
+  },
+  after: {
+    find: [populateUser],
+    get: [populateUser]
+  }
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Service documentation" icon="server" href="/cli/commands/service">
+    Learn more about Feathers services
+  </Card>
+  <Card title="Authentication" icon="lock">
+    Add authentication to your application
+  </Card>
+</CardGroup>
+
+<Tip>
+  Hooks execute in the order they are registered. Place validation hooks before data transformation hooks.
+</Tip>
+
+<Warning>
+  Always return the context (for regular hooks) or call next() (for around hooks) to continue the hook chain.
+</Warning>

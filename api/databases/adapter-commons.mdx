@@ -1,0 +1,486 @@
+---
+title: Adapter Commons
+description: API reference for common database adapter utilities and base classes
+---
+
+The adapter-commons package provides shared utilities, base classes, and types used by all Feathers database adapters. This is typically used when building custom database adapters.
+
+## Installation
+
+```bash
+npm install @feathersjs/adapter-commons
+```
+
+## AdapterBase
+
+Abstract base class that all database adapters extend from.
+
+```typescript
+import { AdapterBase } from '@feathersjs/adapter-commons'
+
+class MyAdapter<Result, Data, ServiceParams, PatchData> extends AdapterBase<
+  Result,
+  Data, 
+  PatchData,
+  ServiceParams,
+  Options
+> {
+  // Implement abstract methods
+  async _find(params) { /* ... */ }
+  async _get(id, params) { /* ... */ }
+  async _create(data, params) { /* ... */ }
+  async _update(id, data, params) { /* ... */ }
+  async _patch(id, data, params) { /* ... */ }
+  async _remove(id, params) { /* ... */ }
+}
+```
+
+### Constructor
+
+<ParamField path="options" type="AdapterServiceOptions" required>
+  Base adapter options
+  
+  <ParamField path="id" type="string" default="id">
+    Name of the id field property
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationParams">
+    Pagination configuration with `default` and `max` values
+  </ParamField>
+  
+  <ParamField path="multi" type="boolean | string[]">
+    Allow multiple updates. `true`, `false`, or array of method names
+  </ParamField>
+  
+  <ParamField path="events" type="string[]">
+    Custom event names (deprecated, use service registration events option)
+  </ParamField>
+  
+  <ParamField path="filters" type="FilterSettings">
+    Custom query filters with converter functions
+  </ParamField>
+  
+  <ParamField path="operators" type="string[]">
+    Additional query operators to allow
+  </ParamField>
+</ParamField>
+
+### Properties
+
+#### id
+
+The name of the id property.
+
+```typescript
+const idField = adapter.id // 'id' or '_id'
+```
+
+#### events
+
+List of custom event names.
+
+```typescript
+const events = adapter.events
+```
+
+#### options
+
+The full adapter options object.
+
+```typescript
+const options = adapter.options
+```
+
+### Methods
+
+#### getOptions
+
+Get the merged options for a service call, combining base options with params.
+
+```typescript
+const options = adapter.getOptions(params)
+```
+
+<ParamField path="params" type="ServiceParams" required>
+  Service call parameters
+</ParamField>
+
+<ResponseField name="result" type="Options">
+  Merged options including `params.adapter` overrides
+</ResponseField>
+
+#### allowsMulti
+
+Check if a method allows multiple updates.
+
+```typescript
+const allowed = adapter.allowsMulti(method, params)
+```
+
+<ParamField path="method" type="string" required>
+  The method name (e.g., 'create', 'patch', 'remove')
+</ParamField>
+
+<ParamField path="params" type="ServiceParams">
+  Service call parameters
+</ParamField>
+
+<ResponseField name="result" type="boolean">
+  Whether multiple updates are allowed for this method
+</ResponseField>
+
+#### sanitizeQuery
+
+Convert and validate query parameters.
+
+```typescript
+const query = await adapter.sanitizeQuery(params)
+```
+
+<ParamField path="params" type="ServiceParams">
+  Service call parameters with query
+</ParamField>
+
+<ResponseField name="result" type="Query">
+  Sanitized query with converted values
+</ResponseField>
+
+### Abstract Methods
+
+These methods must be implemented by the adapter:
+
+```typescript
+abstract _find(params?: ServiceParams): Promise<Paginated<Result> | Result[]>
+abstract _get(id: Id, params?: ServiceParams): Promise<Result>
+abstract _create(data: Data | Data[], params?: ServiceParams): Promise<Result | Result[]>
+abstract _update(id: Id, data: Data, params?: ServiceParams): Promise<Result>
+abstract _patch(id: Id | null, data: PatchData, params?: ServiceParams): Promise<Result | Result[]>
+abstract _remove(id: Id | null, params?: ServiceParams): Promise<Result | Result[]>
+```
+
+## Query Filtering
+
+### filterQuery
+
+Separate special query parameters from regular query.
+
+```typescript
+import { filterQuery } from '@feathersjs/adapter-commons'
+
+const { query, filters } = filterQuery(params.query, options)
+```
+
+<ParamField path="query" type="Query" required>
+  The incoming query object
+</ParamField>
+
+<ParamField path="options" type="FilterQueryOptions">
+  <ParamField path="filters" type="FilterSettings">
+    Custom filter definitions
+  </ParamField>
+  
+  <ParamField path="operators" type="string[]">
+    Allowed query operators
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationParams">
+    Pagination configuration
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="{ query: Query, filters: object }">
+  Separated query and filters object
+  
+  <ResponseField name="query" type="Query">
+    Query without special parameters
+  </ResponseField>
+  
+  <ResponseField name="filters" type="object">
+    Object with `$limit`, `$skip`, `$sort`, `$select`, `$or`, `$and`
+  </ResponseField>
+</ResponseField>
+
+### getLimit
+
+Calculate the appropriate limit based on pagination settings.
+
+```typescript
+import { getLimit } from '@feathersjs/adapter-commons'
+
+const limit = getLimit(requestedLimit, paginate)
+```
+
+<ParamField path="limit" type="any" required>
+  The requested limit value
+</ParamField>
+
+<ParamField path="paginate" type="PaginationParams">
+  Pagination configuration
+</ParamField>
+
+<ResponseField name="result" type="number">
+  The calculated limit (respecting max if set)
+</ResponseField>
+
+### OPERATORS
+
+Default query operators allowed by adapters.
+
+```typescript
+import { OPERATORS } from '@feathersjs/adapter-commons'
+
+console.log(OPERATORS)
+// ['$in', '$nin', '$lt', '$lte', '$gt', '$gte', '$ne', '$or']
+```
+
+### FILTERS
+
+Default special query parameter converters.
+
+```typescript
+import { FILTERS } from '@feathersjs/adapter-commons'
+
+console.log(Object.keys(FILTERS))
+// ['$skip', '$sort', '$limit', '$select', '$or', '$and']
+```
+
+## Sorting
+
+### sorter
+
+Create an in-memory sorting function from a `$sort` object.
+
+```typescript
+import { sorter } from '@feathersjs/adapter-commons'
+
+const sortFn = sorter({ name: 1, age: -1 })
+const sorted = items.sort(sortFn)
+```
+
+<ParamField path="$sort" type="{ [key: string]: 1 | -1 }" required>
+  Sort specification object
+</ParamField>
+
+<ResponseField name="result" type="(a: any, b: any) => number">
+  Comparator function for Array.sort()
+</ResponseField>
+
+### compare
+
+Compare two values with proper type handling.
+
+```typescript
+import { compare } from '@feathersjs/adapter-commons'
+
+const result = compare(value1, value2)
+// Returns -1, 0, or 1
+```
+
+<ParamField path="a" type="any" required>
+  First value
+</ParamField>
+
+<ParamField path="b" type="any" required>
+  Second value
+</ParamField>
+
+<ParamField path="compareStrings" type="(a, b) => -1 | 0 | 1">
+  Custom string comparison function
+</ParamField>
+
+<ResponseField name="result" type="-1 | 0 | 1">
+  Comparison result
+</ResponseField>
+
+## Selection
+
+### select
+
+Create a function that picks only selected fields from results.
+
+```typescript
+import { select } from '@feathersjs/adapter-commons'
+
+const selectFn = select(params, 'id')
+const filtered = selectFn(data)
+```
+
+<ParamField path="params" type="Params" required>
+  Service parameters with `query.$select`
+</ParamField>
+
+<ParamField path="...otherFields" type="string[]">
+  Additional fields to always include
+</ParamField>
+
+<ResponseField name="result" type="(data: any) => any">
+  Function that filters data to selected fields
+</ResponseField>
+
+## Types
+
+### AdapterServiceOptions
+
+Base options interface for all adapters.
+
+```typescript
+interface AdapterServiceOptions {
+  id?: string
+  paginate?: PaginationParams
+  multi?: boolean | string[]
+  operators?: string[]
+  filters?: FilterSettings
+  events?: string[]
+}
+```
+
+### AdapterParams
+
+Extended params interface with adapter-specific options.
+
+```typescript
+interface AdapterParams<Q = AdapterQuery> extends Params<Q> {
+  adapter?: Partial<AdapterServiceOptions>
+  paginate?: PaginationParams
+}
+```
+
+### AdapterQuery
+
+Query interface with standard filter parameters.
+
+```typescript
+interface AdapterQuery extends Query {
+  $limit?: number
+  $skip?: number
+  $select?: string[]
+  $sort?: { [key: string]: 1 | -1 }
+}
+```
+
+### PaginationParams
+
+Pagination configuration.
+
+```typescript
+interface PaginationParams {
+  default?: number  // Default page size
+  max?: number      // Maximum allowed page size
+}
+```
+
+### FilterSettings
+
+Custom filter converter functions.
+
+```typescript
+type FilterSettings = {
+  [key: string]: QueryFilter | true
+}
+
+type QueryFilter = (value: any, options: FilterQueryOptions) => any
+```
+
+### InternalServiceMethods
+
+Interface for hook-less internal methods (prefixed with `_`).
+
+```typescript
+interface InternalServiceMethods<Result, Data, PatchData, Params> {
+  _find(params?: Params): Promise<Paginated<Result> | Result[]>
+  _get(id: Id, params?: Params): Promise<Result>
+  _create(data: Data | Data[], params?: Params): Promise<Result | Result[]>
+  _update(id: Id, data: Data, params?: Params): Promise<Result>
+  _patch(id: Id | null, data: PatchData, params?: Params): Promise<Result | Result[]>
+  _remove(id: Id | null, params?: Params): Promise<Result | Result[]>
+}
+```
+
+## VALIDATED Symbol
+
+Symbol to mark queries as already validated.
+
+```typescript
+import { VALIDATED } from '@feathersjs/adapter-commons'
+
+// Mark query as validated to skip sanitization
+const query = {
+  status: 'active',
+  [VALIDATED]: true
+}
+```
+
+## Example: Custom Adapter
+
+```typescript
+import { AdapterBase, AdapterServiceOptions, AdapterParams } from '@feathersjs/adapter-commons'
+import { Id, Paginated } from '@feathersjs/feathers'
+
+interface MyAdapterOptions extends AdapterServiceOptions {
+  connection: any
+}
+
+class MyCustomAdapter<Result, Data, ServiceParams extends AdapterParams, PatchData> extends AdapterBase<
+  Result,
+  Data,
+  PatchData,
+  ServiceParams,
+  MyAdapterOptions
+> {
+  async _find(params?: ServiceParams): Promise<Paginated<Result> | Result[]> {
+    const { query, filters } = this.filterQuery(null, params)
+    const { paginate } = this.getOptions(params)
+    
+    // Your database query logic here
+    const data = await this.runQuery(query, filters)
+    
+    if (paginate && paginate.default) {
+      const total = await this.countRecords(query)
+      return {
+        total,
+        data,
+        limit: filters.$limit,
+        skip: filters.$skip || 0
+      }
+    }
+    
+    return data
+  }
+  
+  async _get(id: Id, params?: ServiceParams): Promise<Result> {
+    // Implementation
+  }
+  
+  async _create(data: Data | Data[], params?: ServiceParams): Promise<Result | Result[]> {
+    if (Array.isArray(data)) {
+      return Promise.all(data.map(item => this._create(item, params)))
+    }
+    // Implementation
+  }
+  
+  async _update(id: Id, data: Data, params?: ServiceParams): Promise<Result> {
+    // Implementation
+  }
+  
+  async _patch(id: Id | null, data: PatchData, params?: ServiceParams): Promise<Result | Result[]> {
+    if (id === null && !this.allowsMulti('patch', params)) {
+      throw new MethodNotAllowed('Can not patch multiple entries')
+    }
+    // Implementation
+  }
+  
+  async _remove(id: Id | null, params?: ServiceParams): Promise<Result | Result[]> {
+    if (id === null && !this.allowsMulti('remove', params)) {
+      throw new MethodNotAllowed('Can not remove multiple entries')
+    }
+    // Implementation
+  }
+}
+
+// Create service
+const service = new MyCustomAdapter({
+  connection: myConnection,
+  id: 'id',
+  paginate: { default: 10, max: 50 }
+})
+```

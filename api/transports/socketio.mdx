@@ -1,0 +1,345 @@
+---
+title: Socket.io Transport
+description: API reference for @feathersjs/socketio real-time transport provider
+---
+
+# Socket.io Transport
+
+The `@feathersjs/socketio` module provides real-time communication for Feathers services using Socket.io.
+
+## Installation
+
+```bash
+npm install @feathersjs/socketio socket.io
+```
+
+## socketio()
+
+Configures Socket.io as a real-time transport provider for Feathers services.
+
+### Signature
+
+```typescript
+function socketio(
+  callback?: (io: Server) => void
+): (app: Application) => void
+
+function socketio(
+  options: number | Partial<ServerOptions>,
+  callback?: (io: Server) => void
+): (app: Application) => void
+
+function socketio(
+  port: number,
+  options?: Partial<ServerOptions>,
+  callback?: (io: Server) => void
+): (app: Application) => void
+```
+
+<ParamField path="port" type="number" optional>
+  Port number for standalone Socket.io server (when not using Express/Koa)
+</ParamField>
+
+<ParamField path="options" type="Partial<ServerOptions>" optional>
+  Socket.io server configuration options
+</ParamField>
+
+<ParamField path="callback" type="(io: Server) => void" optional>
+  Configuration callback that receives the Socket.io server instance
+</ParamField>
+
+### ServerOptions
+
+Socket.io server options include:
+
+<ParamField path="cors" type="object" optional>
+  CORS configuration for Socket.io connections
+</ParamField>
+
+<ParamField path="path" type="string" optional default="/socket.io">
+  Path where Socket.io server listens
+</ParamField>
+
+<ParamField path="transports" type="string[]" optional>
+  Allowed transports (e.g., `['websocket', 'polling']`)
+</ParamField>
+
+<ParamField path="pingTimeout" type="number" optional default="20000">
+  Ping timeout in milliseconds
+</ParamField>
+
+<ParamField path="pingInterval" type="number" optional default="25000">
+  Ping interval in milliseconds
+</ParamField>
+
+### Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import express from '@feathersjs/express'
+import socketio from '@feathersjs/socketio'
+
+const app = express(feathers())
+
+// Basic setup
+app.configure(socketio())
+
+// With options
+app.configure(socketio({
+  cors: {
+    origin: 'http://localhost:3000',
+    credentials: true
+  },
+  transports: ['websocket']
+}))
+
+// With configuration callback
+app.configure(socketio((io) => {
+  io.on('connection', (socket) => {
+    console.log('New socket connection:', socket.id)
+  })
+  
+  // Custom Socket.io middleware
+  io.use((socket, next) => {
+    // Validate connection
+    next()
+  })
+}))
+
+// With port (standalone)
+app.configure(socketio(3031, {
+  cors: { origin: '*' }
+}))
+
+app.listen(3030)
+```
+
+## Application Extensions
+
+When Socket.io is configured, the application is extended with:
+
+<ResponseField name="app.io" type="Server">
+  The Socket.io server instance for direct access
+</ResponseField>
+
+### Example
+
+```typescript
+app.configure(socketio())
+
+await app.listen(3030)
+
+// Access Socket.io server
+const io = app.io
+
+// Broadcast to all clients
+io.emit('news', { text: 'Important update!' })
+
+// Access connected sockets
+io.sockets.sockets.forEach((socket) => {
+  console.log('Connected socket:', socket.id)
+})
+```
+
+## Connection Parameters
+
+Socket connections automatically receive Feathers params:
+
+<ResponseField name="socket.feathers" type="Params">
+  Feathers params object with connection metadata
+</ResponseField>
+
+<ResponseField name="socket.feathers.provider" type="string">
+  Set to `'socketio'` for Socket.io connections
+</ResponseField>
+
+<ResponseField name="socket.feathers.headers" type="object">
+  Connection handshake headers
+</ResponseField>
+
+<ResponseField name="socket.feathers.authentication" type="object" optional>
+  Parsed authentication data (when authentication is configured)
+</ResponseField>
+
+## Authentication
+
+Socket.io automatically integrates with Feathers authentication:
+
+```typescript
+import socketio from '@feathersjs/socketio'
+import '@feathersjs/authentication'
+
+const app = express(feathers())
+
+// Configure authentication first
+app.configure(authentication({
+  // authentication config
+}))
+
+// Socket.io will automatically parse authentication
+app.configure(socketio())
+```
+
+Authentication is parsed from:
+- Connection handshake headers
+- JWT tokens in the `Authorization` header
+- Custom authentication strategies
+
+## Events
+
+Socket.io connections emit standard Feathers events:
+
+### Connection Events
+
+```typescript
+app.on('connection', (connection) => {
+  console.log('New real-time connection', connection)
+})
+
+app.on('disconnect', (connection) => {
+  console.log('Connection disconnected', connection)
+})
+```
+
+### Service Events
+
+Services automatically emit events to connected clients:
+
+```typescript
+// Clients automatically receive these events:
+// - created
+// - updated
+// - patched
+// - removed
+
+const messages = app.service('messages')
+
+// This will emit 'created' event to all connected clients
+await messages.create({ text: 'Hello!' })
+```
+
+## Event Filtering
+
+Control which clients receive service events:
+
+```typescript
+app.service('messages').publish('created', (data, context) => {
+  // Send to all authenticated users
+  return app.channel('authenticated')
+})
+
+app.service('messages').publish('updated', (data, context) => {
+  // Send only to the user who owns the message
+  return app.channel(`user/${data.userId}`)
+})
+```
+
+## Channels
+
+Manage Socket.io connections using channels:
+
+```typescript
+app.on('connection', (connection) => {
+  // Add to anonymous channel
+  app.channel('anonymous').join(connection)
+})
+
+app.on('login', (authResult, { connection }) => {
+  // Move authenticated users to their channel
+  app.channel('anonymous').leave(connection)
+  app.channel('authenticated').join(connection)
+  app.channel(`user/${authResult.user.id}`).join(connection)
+})
+```
+
+## Direct Socket Access
+
+Access the underlying Socket.io socket in service hooks:
+
+```typescript
+app.service('messages').hooks({
+  after: {
+    create: [async (context) => {
+      const { params } = context
+      
+      if (params.provider === 'socketio') {
+        // Access socket through connection
+        console.log('Socket ID:', params.connection.id)
+      }
+      
+      return context
+    }]
+  }
+})
+```
+
+## Middleware
+
+Socket.io middleware is automatically configured:
+
+- **disconnect**: Handles client disconnections
+- **params**: Sets up Feathers params on the socket
+- **authentication**: Parses authentication credentials
+
+## Configuration with Express/Koa
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import express from '@feathersjs/express'
+import socketio from '@feathersjs/socketio'
+
+const app = express(feathers())
+
+// Configure transports
+app.configure(express.rest())
+app.configure(socketio({
+  cors: {
+    origin: 'http://localhost:3000',
+    credentials: true
+  }
+}))
+
+// Register services (available via both REST and Socket.io)
+app.use('/messages', messageService)
+
+const server = await app.listen(3030)
+```
+
+## Complete Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import express from '@feathersjs/express'
+import socketio from '@feathersjs/socketio'
+import { memory } from '@feathersjs/memory'
+
+const app = express(feathers())
+
+// Configure Socket.io
+app.configure(socketio((io) => {
+  io.on('connection', (socket) => {
+    console.log('Client connected:', socket.id)
+    
+    socket.on('disconnect', () => {
+      console.log('Client disconnected:', socket.id)
+    })
+  })
+}))
+
+// Register service
+app.use('/messages', memory())
+
+// Setup channels
+app.on('connection', (connection) => {
+  app.channel('everybody').join(connection)
+})
+
+// Publish events
+app.publish((data, context) => {
+  return app.channel('everybody')
+})
+
+// Start server
+const server = await app.listen(3030)
+console.log('Feathers app with Socket.io listening on port 3030')
+```

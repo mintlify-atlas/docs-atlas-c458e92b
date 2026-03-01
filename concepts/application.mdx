@@ -1,0 +1,426 @@
+---
+title: Application
+description: Learn about the core Feathers Application class, lifecycle methods, and how to configure your app
+---
+
+The Feathers Application is the central object that manages services, configuration, and the application lifecycle. It extends Node's `EventEmitter` and provides a clean API for building scalable applications.
+
+## Creating an Application
+
+Create a new Feathers application using the `feathers()` factory function:
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+
+const app = feathers()
+```
+
+The application is fully typed and supports generics for services and settings:
+
+```typescript
+interface Services {
+  users: UserService
+  messages: MessageService
+}
+
+interface Settings {
+  host: string
+  port: number
+}
+
+const app = feathers<Services, Settings>()
+```
+
+## Core API
+
+### app.use(path, service, options?)
+
+Register a service at a specific path:
+
+```typescript application.ts:145-189
+app.use('users', {
+  async find(params) {
+    return []
+  },
+  async get(id, params) {
+    return { id, name: 'User' }
+  },
+  async create(data, params) {
+    return { id: 1, ...data }
+  }
+})
+```
+
+**Service Options:**
+
+<CodeGroup>
+```typescript Methods
+app.use('messages', messageService, {
+  methods: ['find', 'get', 'create', 'myCustomMethod'],
+  events: ['customEvent']
+})
+```
+
+```typescript Events
+app.use('notifications', notificationService, {
+  events: ['alert', 'warning'],
+  serviceEvents: ['created', 'updated', 'alert']
+})
+```
+</CodeGroup>
+
+<Note>
+The `methods` option defines which service methods are exposed externally to clients. Custom methods must be explicitly listed.
+</Note>
+
+### app.service(path)
+
+Retrieve a registered service by its path:
+
+```typescript application.ts:61-73
+const userService = app.service('users')
+
+// Use the service
+const users = await userService.find()
+const user = await userService.get(1)
+```
+
+### app.unuse(path)
+
+Remove a service and call its `teardown` method if available:
+
+```typescript application.ts:191-204
+await app.unuse('users')
+```
+
+## Configuration
+
+### app.set(name, value) & app.get(name)
+
+Store and retrieve application settings:
+
+```typescript application.ts:42-49
+app.set('host', 'localhost')
+app.set('port', 3030)
+app.set('authentication', {
+  secret: 'your-secret-key',
+  strategies: ['jwt', 'local']
+})
+
+const port = app.get('port') // 3030
+const host = app.get('host') // 'localhost'
+```
+
+### app.configure(callback)
+
+Run configuration functions with the application context:
+
+```typescript application.ts:51-55
+app.configure((app) => {
+  app.set('env', process.env.NODE_ENV)
+})
+
+// Import configuration modules
+import { configureAuth } from './auth'
+app.configure(configureAuth)
+```
+
+## Lifecycle Methods
+
+### app.setup(server?)
+
+Initialize the application and call `setup()` on all registered services:
+
+```typescript application.ts:75-93
+// Called automatically by transports like @feathersjs/express
+await app.setup()
+
+// Or manually
+await app.setup(httpServer)
+```
+
+<Tabs>
+  <Tab title="Service Setup">
+```typescript
+class UserService {
+  async setup(app, path) {
+    console.log(`Setting up service at ${path}`)
+    this.app = app
+    // Initialize database connections, subscriptions, etc.
+  }
+  
+  async find(params) {
+    return []
+  }
+}
+
+app.use('users', new UserService())
+await app.setup() // Calls UserService.setup()
+```
+  </Tab>
+  <Tab title="With Hooks">
+```typescript
+app.hooks({
+  setup: [
+    async (context, next) => {
+      console.log('App is setting up')
+      await next()
+      console.log('App setup complete')
+    }
+  ]
+})
+
+await app.setup()
+```
+  </Tab>
+</Tabs>
+
+<Warning>
+`setup()` should only be called once. Services registered after `setup()` is called will have their `setup()` method invoked immediately.
+</Warning>
+
+### app.teardown(server?)
+
+Cleanly shut down the application and call `teardown()` on all services:
+
+```typescript application.ts:110-128
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  await app.teardown()
+  process.exit(0)
+})
+```
+
+```typescript
+class DatabaseService {
+  async setup(app, path) {
+    this.connection = await connectToDatabase()
+  }
+  
+  async teardown(app, path) {
+    console.log(`Tearing down ${path}`)
+    await this.connection.close()
+  }
+}
+```
+
+## Sub-Applications
+
+Mount entire Feathers applications as sub-apps:
+
+```typescript
+const api = feathers()
+api.use('users', userService)
+api.use('messages', messageService)
+
+const app = feathers()
+app.use('api/v1', api)
+
+// Services are now available at:
+// - api/v1/users
+// - api/v1/messages
+```
+
+## Application Hooks
+
+Register hooks that run for all services:
+
+```typescript application.ts:206-223
+app.hooks({
+  before: {
+    all: [
+      async (context) => {
+        console.log(`Calling ${context.path}.${context.method}`)
+      }
+    ]
+  },
+  after: {
+    all: [
+      async (context) => {
+        console.log(`Result:`, context.result)
+      }
+    ]
+  },
+  error: {
+    all: [
+      async (context) => {
+        console.error(`Error in ${context.path}.${context.method}:`, context.error)
+      }
+    ]
+  }
+})
+```
+
+## Application Properties
+
+### app.services
+
+An object containing all registered services keyed by path:
+
+```typescript application.ts:26
+// Don't access directly - use app.service(path) instead
+const services = Object.keys(app.services)
+console.log('Registered services:', services)
+```
+
+### app.settings
+
+The settings object:
+
+```typescript application.ts:27
+// Don't access directly - use app.get() and app.set() instead
+const allSettings = app.settings
+```
+
+### app.version
+
+The Feathers version string:
+
+```typescript application.ts:29
+console.log('Feathers version:', app.version)
+```
+
+### app.mixins
+
+Array of functions that run when services are registered:
+
+```typescript application.ts:28
+app.mixins.push((service, path, options) => {
+  // Add custom functionality to all services
+  service.customMethod = () => { /* ... */ }
+})
+```
+
+## Real-World Example
+
+<CodeGroup>
+```typescript Complete App
+import { feathers } from '@feathersjs/feathers'
+
+interface Services {
+  users: typeof userService
+  messages: typeof messageService
+}
+
+const app = feathers<Services>()
+
+// Configure settings
+app.set('host', process.env.HOST || 'localhost')
+app.set('port', process.env.PORT || 3030)
+
+// Register services
+app.use('users', {
+  async find(params) {
+    return { data: [], total: 0 }
+  },
+  async get(id, params) {
+    return { id, email: 'user@example.com' }
+  },
+  async setup(app, path) {
+    console.log(`Users service ready at ${path}`)
+  }
+})
+
+app.use('messages', {
+  async find(params) {
+    return { data: [], total: 0 }
+  },
+  async create(data, params) {
+    return { id: 1, text: data.text }
+  }
+})
+
+// Application hooks
+app.hooks({
+  before: {
+    all: [
+      async (context) => {
+        context.params.timestamp = Date.now()
+      }
+    ]
+  },
+  error: {
+    all: [
+      async (context) => {
+        console.error('Error:', context.error.message)
+      }
+    ]
+  }
+})
+
+// Setup and start
+await app.setup()
+
+export default app
+```
+
+```typescript With TypeScript
+import { feathers, Application } from '@feathersjs/feathers'
+
+interface User {
+  id: number
+  email: string
+  name: string
+}
+
+interface UserService {
+  find(params: Params): Promise<User[]>
+  get(id: number, params: Params): Promise<User>
+  create(data: Partial<User>, params: Params): Promise<User>
+}
+
+interface Services {
+  users: UserService
+}
+
+interface Settings {
+  host: string
+  port: number
+  database: string
+}
+
+const app: Application<Services, Settings> = feathers()
+
+app.set('host', 'localhost')
+app.set('port', 3030)
+
+const userService: UserService = {
+  async find(params) {
+    return []
+  },
+  async get(id, params) {
+    return { id, email: 'test@example.com', name: 'Test' }
+  },
+  async create(data, params) {
+    return { id: 1, email: data.email!, name: data.name! }
+  }
+}
+
+app.use('users', userService)
+
+// Fully typed service access
+const users = app.service('users')
+const user = await users.get(1)
+
+export default app
+```
+</CodeGroup>
+
+## Best Practices
+
+1. **Use `app.service()` to access services** - Never access `app.services` directly
+2. **Call `setup()` once** - Let your transport (Express, Koa) handle this automatically
+3. **Implement graceful shutdown** - Always call `teardown()` before exiting
+4. **Type your application** - Use TypeScript generics for better developer experience
+5. **Use `configure()` for plugins** - Keep configuration modular and reusable
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Services" icon="gears" href="/concepts/services">
+    Learn about service methods and architecture
+  </Card>
+  <Card title="Hooks" icon="hook" href="/concepts/hooks">
+    Understand the powerful hooks system
+  </Card>
+</CardGroup>

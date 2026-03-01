@@ -1,0 +1,591 @@
+---
+title: Testing Feathers Applications
+description: Comprehensive guide to testing Feathers applications including services, hooks, authentication, and end-to-end testing with best practices.
+---
+
+Testing is essential for maintaining reliable Feathers applications. This guide covers testing strategies for services, hooks, real-time events, and complete application workflows.
+
+## Test Setup
+
+Feathers applications typically use Mocha for testing, though you can use any testing framework like Jest or Vitest.
+
+### Installation
+
+```bash
+npm install --save-dev mocha @types/mocha assert axios
+```
+
+### Basic Test Structure
+
+Generated Feathers apps include test files with this structure:
+
+```typescript
+// test/app.test.ts
+import assert from 'assert'
+import axios from 'axios'
+import type { Server } from 'http'
+import { app } from '../src/app'
+
+const port = app.get('port')
+const appUrl = `http://${app.get('host')}:${port}`
+
+describe('Feathers application tests', () => {
+  let server: Server
+
+  before(async () => {
+    server = await app.listen(port)
+  })
+
+  after(async () => {
+    await app.teardown()
+  })
+
+  it('starts and shows the index page', async () => {
+    const { data } = await axios.get<string>(appUrl)
+    assert.ok(data.indexOf('<html lang="en">') !== -1)
+  })
+})
+```
+
+## Testing Services
+
+Services can be tested in isolation without starting the HTTP server.
+
+### Service Unit Tests
+
+```typescript
+// test/services/users.test.ts
+import assert from 'assert'
+import { app } from '../../src/app'
+
+describe('users service', () => {
+  it('registered the service', () => {
+    const service = app.service('users')
+    assert.ok(service, 'Registered the service')
+  })
+
+  it('creates a user', async () => {
+    const user = await app.service('users').create({
+      email: 'test@example.com',
+      password: 'supersecret'
+    })
+
+    assert.ok(user.id)
+    assert.strictEqual(user.email, 'test@example.com')
+    assert.ok(!user.password, 'Password should be hidden')
+  })
+
+  it('finds users', async () => {
+    const users = await app.service('users').find({
+      query: { email: 'test@example.com' }
+    })
+
+    assert.strictEqual(users.total, 1)
+    assert.strictEqual(users.data[0].email, 'test@example.com')
+  })
+
+  it('gets a user by id', async () => {
+    const created = await app.service('users').create({
+      email: 'another@example.com',
+      password: 'secret'
+    })
+
+    const user = await app.service('users').get(created.id)
+    assert.strictEqual(user.email, 'another@example.com')
+  })
+
+  it('patches a user', async () => {
+    const created = await app.service('users').create({
+      email: 'patch@example.com',
+      password: 'secret'
+    })
+
+    const patched = await app.service('users').patch(created.id, {
+      email: 'patched@example.com'
+    })
+
+    assert.strictEqual(patched.email, 'patched@example.com')
+  })
+
+  it('removes a user', async () => {
+    const created = await app.service('users').create({
+      email: 'remove@example.com',
+      password: 'secret'
+    })
+
+    const removed = await app.service('users').remove(created.id)
+    assert.strictEqual(removed.id, created.id)
+
+    try {
+      await app.service('users').get(created.id)
+      assert.fail('Should have thrown NotFound')
+    } catch (error: any) {
+      assert.strictEqual(error.code, 404)
+    }
+  })
+})
+```
+
+### Testing Service Hooks
+
+```typescript
+import assert from 'assert'
+import { HookContext } from '@feathersjs/feathers'
+import { app } from '../../src/app'
+
+describe('users service hooks', () => {
+  it('hashes passwords before create', async () => {
+    const user = await app.service('users').create({
+      email: 'hook-test@example.com',
+      password: 'plaintext'
+    })
+
+    // Password should not be returned
+    assert.ok(!user.password)
+  })
+
+  it('adds timestamps', async () => {
+    const user = await app.service('users').create({
+      email: 'timestamp@example.com',
+      password: 'secret'
+    })
+
+    assert.ok(user.createdAt)
+    assert.ok(user.updatedAt)
+  })
+
+  it('validates required fields', async () => {
+    try {
+      await app.service('users').create({
+        email: 'no-password@example.com'
+      })
+      assert.fail('Should have thrown validation error')
+    } catch (error: any) {
+      assert.ok(error.message.includes('password'))
+    }
+  })
+})
+```
+
+## Testing Hooks
+
+You can test hooks in isolation by creating mock contexts.
+
+```typescript
+import assert from 'assert'
+import { HookContext } from '@feathersjs/feathers'
+import { logError } from '../../src/hooks/log-error'
+
+describe('log-error hook', () => {
+  it('logs errors', async () => {
+    const mockContext = {
+      type: 'error',
+      error: new Error('Test error'),
+      path: 'users',
+      method: 'create',
+      app: {
+        get: () => ({ error: () => {} })
+      }
+    } as unknown as HookContext
+
+    const next = async () => {}
+    await logError(mockContext, next)
+
+    // Verify error was handled
+    assert.ok(mockContext.error)
+  })
+})
+```
+
+### Testing Custom Hooks
+
+```typescript
+import assert from 'assert'
+import { HookContext } from '@feathersjs/feathers'
+
+// Your custom hook
+const addTimestamp = async (context: HookContext) => {
+  context.data.timestamp = new Date()
+  return context
+}
+
+describe('addTimestamp hook', () => {
+  it('adds timestamp to data', async () => {
+    const mockContext = {
+      data: { message: 'Hello' },
+      type: 'before',
+      method: 'create'
+    } as HookContext
+
+    await addTimestamp(mockContext)
+
+    assert.ok(mockContext.data.timestamp)
+    assert.ok(mockContext.data.timestamp instanceof Date)
+  })
+})
+```
+
+## Testing Authentication
+
+<Steps>
+
+### Create test users
+
+```typescript
+describe('authentication', () => {
+  let testUser: any
+
+  before(async () => {
+    // Create a test user
+    testUser = await app.service('users').create({
+      email: 'test@example.com',
+      password: 'supersecret'
+    })
+  })
+
+  after(async () => {
+    // Clean up
+    await app.service('users').remove(testUser.id)
+  })
+})
+```
+
+### Test local authentication
+
+```typescript
+it('authenticates with valid credentials', async () => {
+  const result = await app.service('authentication').create({
+    strategy: 'local',
+    email: 'test@example.com',
+    password: 'supersecret'
+  })
+
+  assert.ok(result.accessToken)
+  assert.ok(result.user)
+  assert.strictEqual(result.user.email, 'test@example.com')
+})
+
+it('fails with invalid credentials', async () => {
+  try {
+    await app.service('authentication').create({
+      strategy: 'local',
+      email: 'test@example.com',
+      password: 'wrongpassword'
+    })
+    assert.fail('Should have thrown')
+  } catch (error: any) {
+    assert.strictEqual(error.code, 401)
+  }
+})
+```
+
+### Test authenticated requests
+
+```typescript
+it('requires authentication for protected services', async () => {
+  // Try without authentication
+  try {
+    await app.service('messages').find()
+    assert.fail('Should require authentication')
+  } catch (error: any) {
+    assert.strictEqual(error.code, 401)
+  }
+
+  // Authenticate
+  const auth = await app.service('authentication').create({
+    strategy: 'local',
+    email: 'test@example.com',
+    password: 'supersecret'
+  })
+
+  // Make authenticated request
+  const messages = await app.service('messages').find({
+    authentication: auth.accessToken
+  })
+
+  assert.ok(messages)
+})
+```
+
+</Steps>
+
+## Testing Real-time Events
+
+```typescript
+import assert from 'assert'
+import { app } from '../../src/app'
+
+describe('real-time events', () => {
+  it('emits created event', (done) => {
+    const service = app.service('messages')
+
+    service.once('created', (message: any) => {
+      assert.strictEqual(message.text, 'Hello world')
+      done()
+    })
+
+    service.create({ text: 'Hello world' })
+  })
+
+  it('emits patched event', (done) => {
+    app.service('messages').create({ text: 'Original' })
+      .then((created) => {
+        app.service('messages').once('patched', (message: any) => {
+          assert.strictEqual(message.text, 'Updated')
+          done()
+        })
+
+        app.service('messages').patch(created.id, { text: 'Updated' })
+      })
+  })
+
+  it('emits removed event', (done) => {
+    app.service('messages').create({ text: 'To delete' })
+      .then((created) => {
+        app.service('messages').once('removed', (message: any) => {
+          assert.strictEqual(message.id, created.id)
+          done()
+        })
+
+        app.service('messages').remove(created.id)
+      })
+  })
+})
+```
+
+## End-to-End HTTP Testing
+
+Test your REST API endpoints using axios:
+
+```typescript
+import assert from 'assert'
+import axios from 'axios'
+import type { Server } from 'http'
+import { app } from '../src/app'
+
+const port = app.get('port')
+const appUrl = `http://${app.get('host')}:${port}`
+
+describe('REST API', () => {
+  let server: Server
+  let accessToken: string
+
+  before(async () => {
+    server = await app.listen(port)
+
+    // Authenticate for tests
+    const { data } = await axios.post(`${appUrl}/authentication`, {
+      strategy: 'local',
+      email: 'test@example.com',
+      password: 'supersecret'
+    })
+    accessToken = data.accessToken
+  })
+
+  after(async () => {
+    await app.teardown()
+  })
+
+  it('GET /users returns users', async () => {
+    const { data } = await axios.get(`${appUrl}/users`, {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    })
+
+    assert.ok(Array.isArray(data.data))
+  })
+
+  it('POST /users creates a user', async () => {
+    const { data, status } = await axios.post(`${appUrl}/users`, {
+      email: 'new@example.com',
+      password: 'secret'
+    })
+
+    assert.strictEqual(status, 201)
+    assert.strictEqual(data.email, 'new@example.com')
+  })
+
+  it('shows a 404 JSON error', async () => {
+    try {
+      await axios.get(`${appUrl}/path/to/nowhere`)
+      assert.fail('Should have thrown')
+    } catch (error: any) {
+      assert.strictEqual(error.response.status, 404)
+      assert.strictEqual(error.response.data.code, 404)
+      assert.strictEqual(error.response.data.name, 'NotFound')
+    }
+  })
+})
+```
+
+## Testing with Different Databases
+
+Use a separate test database configuration:
+
+```json
+// config/test.json
+{
+  "port": 8998,
+  "mongodb": "mongodb://localhost:27017/myapp-test",
+  "postgres": {
+    "connection": {
+      "database": "myapp_test"
+    }
+  }
+}
+```
+
+### Database Cleanup
+
+```typescript
+describe('users service', () => {
+  // Clean database before each test
+  beforeEach(async () => {
+    const service = app.service('users')
+    const users = await service.find({ paginate: false })
+    await Promise.all(
+      users.map((user: any) => service.remove(user.id))
+    )
+  })
+
+  // Tests here
+})
+```
+
+## Best Practices
+
+<Note>
+Always clean up test data and close connections properly to prevent test pollution and resource leaks.
+</Note>
+
+### 1. Use Lifecycle Hooks
+
+```typescript
+describe('service tests', () => {
+  before(async () => {
+    // Setup: start server, seed data
+    await app.setup()
+  })
+
+  after(async () => {
+    // Teardown: cleanup, close connections
+    await app.teardown()
+  })
+
+  beforeEach(async () => {
+    // Reset state before each test
+  })
+
+  afterEach(async () => {
+    // Cleanup after each test
+  })
+})
+```
+
+### 2. Isolate Tests
+
+Each test should be independent:
+
+```typescript
+it('creates a message', async () => {
+  const message = await app.service('messages').create({
+    text: 'Test message'
+  })
+  
+  // Clean up
+  await app.service('messages').remove(message.id)
+  
+  assert.ok(message.id)
+})
+```
+
+### 3. Test Edge Cases
+
+```typescript
+it('handles invalid data', async () => {
+  try {
+    await app.service('users').create({ invalid: 'data' })
+    assert.fail('Should have thrown')
+  } catch (error: any) {
+    assert.ok(error.message.includes('validation'))
+  }
+})
+
+it('handles missing resources', async () => {
+  try {
+    await app.service('users').get(999999)
+    assert.fail('Should have thrown')
+  } catch (error: any) {
+    assert.strictEqual(error.code, 404)
+  }
+})
+```
+
+### 4. Use Descriptive Test Names
+
+```typescript
+// Good
+it('creates a user with hashed password', async () => { })
+it('prevents duplicate email addresses', async () => { })
+it('requires authentication for user list', async () => { })
+
+// Bad
+it('works', async () => { })
+it('test 1', async () => { })
+```
+
+### 5. Test Error Handling
+
+```typescript
+it('handles database connection errors', async () => {
+  // Mock database failure
+  const service = app.service('users')
+  const originalFind = service.find
+  
+  service.find = async () => {
+    throw new Error('Database connection failed')
+  }
+
+  try {
+    await service.find()
+    assert.fail('Should have thrown')
+  } catch (error: any) {
+    assert.ok(error.message.includes('Database'))
+  } finally {
+    service.find = originalFind
+  }
+})
+```
+
+## Running Tests
+
+Add test scripts to your `package.json`:
+
+```json
+{
+  "scripts": {
+    "test": "NODE_ENV=test mocha test/**/*.test.ts --require ts-node/register --exit",
+    "test:watch": "npm test -- --watch",
+    "test:coverage": "c8 npm test"
+  }
+}
+```
+
+Run tests:
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# With coverage
+npm run test:coverage
+```
+
+## Related Resources
+
+- [Mocha Documentation](https://mochajs.org/)
+- [Service API](/api/services)
+- [Hooks Guide](/api/hooks)
+- [Authentication Guide](/api/authentication)

@@ -1,0 +1,423 @@
+---
+title: Data Validation
+description: Validate incoming data and queries using schemas with Feathers validation hooks
+---
+
+Data validation ensures that incoming data matches your schema definitions before it reaches your service methods. The Feathers schema system provides hooks for validating both data and queries.
+
+## Validation Hooks
+
+The schema system provides two main validation hooks:
+
+- `validateData` - Validates data for `create`, `update`, and `patch` methods
+- `validateQuery` - Validates query parameters for all methods
+
+## Basic Data Validation
+
+<Steps>
+  <Step title="Define Your Schema">
+    Create a schema that describes your data structure:
+    
+    ```typescript
+    import { schema } from '@feathersjs/schema'
+
+    const userDataSchema = schema({
+      $id: 'UserData',
+      type: 'object',
+      additionalProperties: false,
+      required: ['email'],
+      properties: {
+        email: { type: 'string' },
+        password: { type: 'string' }
+      }
+    } as const)
+    ```
+  </Step>
+  
+  <Step title="Add Validation Hook">
+    Apply the validation hook to your service:
+    
+    ```typescript
+    import { validateData } from '@feathersjs/schema'
+
+    app.service('users').hooks({
+      create: [validateData(userDataSchema)]
+    })
+    ```
+  </Step>
+  
+  <Step title="Automatic Validation">
+    The hook automatically validates incoming data and throws `BadRequest` errors if validation fails.
+  </Step>
+</Steps>
+
+## Validation with Type Coercion
+
+The default AJV instance enables type coercion, automatically converting data types:
+
+```typescript
+import { schema, validateData } from '@feathersjs/schema'
+
+const messageSchema = schema({
+  $id: 'Message',
+  type: 'object',
+  required: ['text', 'read'],
+  properties: {
+    text: { type: 'string' },
+    read: { type: 'boolean' },
+    upvotes: { type: 'number' }
+  }
+} as const)
+
+app.service('messages').hooks({
+  create: [validateData(messageSchema)]
+})
+
+// Input: { text: 'hi', read: 0, upvotes: '10' }
+// After validation: { text: 'hi', read: false, upvotes: 10 }
+```
+
+## Method-Specific Validation
+
+### Using getDataValidator
+
+Create different validators for `create`, `update`, and `patch`:
+
+<Tabs>
+  <Tab title="Automatic Generation">
+    ```typescript
+    import { getDataValidator } from '@feathersjs/schema'
+    import { Ajv } from '@feathersjs/schema'
+
+    const userDataSchema = {
+      $id: 'UserData',
+      type: 'object',
+      required: ['email', 'password'],
+      properties: {
+        email: { type: 'string' },
+        password: { type: 'string' },
+        name: { type: 'string' }
+      }
+    } as const
+
+    const validators = getDataValidator(userDataSchema, new Ajv())
+
+    // validators.create - Uses schema as-is
+    // validators.update - Same as create
+    // validators.patch - Same as create but no required fields
+
+    app.service('users').hooks({
+      create: [validateData(validators.create)],
+      update: [validateData(validators.update)],
+      patch: [validateData(validators.patch)]
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Custom Validators">
+    ```typescript
+    import { getDataValidator } from '@feathersjs/typebox'
+    import { Type } from '@feathersjs/typebox'
+    import { Ajv } from '@feathersjs/schema'
+
+    const userCreateSchema = Type.Object({
+      email: Type.String(),
+      password: Type.String(),
+      name: Type.String()
+    })
+
+    const userPatchSchema = Type.Object({
+      email: Type.Optional(Type.String()),
+      name: Type.Optional(Type.String())
+      // password not allowed in patch
+    })
+
+    const validators = getDataValidator({
+      create: userCreateSchema,
+      update: userCreateSchema,
+      patch: userPatchSchema
+    }, new Ajv())
+
+    app.service('users').hooks({
+      create: [validateData(validators)]
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Single Hook">
+    ```typescript
+    import { validateData, getDataValidator } from '@feathersjs/schema'
+    import { Ajv } from '@feathersjs/schema'
+
+    const validators = getDataValidator(userDataSchema, new Ajv())
+
+    // The hook automatically uses the correct validator based on context.method
+    app.service('users').hooks([
+      validateData(validators)
+    ])
+    ```
+  </Tab>
+</Tabs>
+
+## Query Validation
+
+Validate query parameters to ensure safe database queries:
+
+```typescript
+import { querySyntax, getValidator } from '@feathersjs/typebox'
+import { validateQuery } from '@feathersjs/schema'
+import { Type } from '@feathersjs/typebox'
+import { Ajv } from '@feathersjs/schema'
+
+const messageProperties = Type.Object({
+  text: Type.String(),
+  userId: Type.Number()
+})
+
+const messageQuerySchema = querySyntax(messageProperties)
+const messageQueryValidator = getValidator(messageQuerySchema, new Ajv())
+
+app.service('messages').hooks({
+  find: [validateQuery(messageQueryValidator)],
+  get: [validateQuery(messageQueryValidator)]
+})
+```
+
+## Query Operators
+
+The `querySyntax` helper creates schemas supporting Feathers query operators:
+
+<CodeGroup>
+```typescript Comparison Operators
+// Supports: $gt, $gte, $lt, $lte, $ne, $in, $nin
+const query = {
+  age: { $gt: 18, $lte: 65 },
+  status: { $in: ['active', 'pending'] },
+  email: { $ne: 'test@example.com' }
+}
+```
+
+```typescript Pagination
+// Supports: $limit, $skip
+const query = {
+  $limit: 10,
+  $skip: 20
+}
+```
+
+```typescript Sorting and Selection
+// Supports: $sort, $select
+const query = {
+  $sort: { createdAt: -1, name: 1 },
+  $select: ['name', 'email', 'createdAt']
+}
+```
+
+```typescript Logical Operators
+// Supports: $or, $and
+const query = {
+  $or: [
+    { age: { $gt: 18 } },
+    { verified: true }
+  ],
+  $and: [
+    { status: 'active' },
+    { email: { $ne: null } }
+  ]
+}
+```
+</CodeGroup>
+
+## Custom Query Extensions
+
+Extend query syntax with custom operators:
+
+```typescript
+import { querySyntax } from '@feathersjs/typebox'
+import { Type } from '@feathersjs/typebox'
+
+const userSchema = Type.Object({
+  name: Type.String(),
+  age: Type.Number()
+})
+
+const userQuerySchema = querySyntax(userSchema, {
+  // Add custom operators for specific fields
+  age: {
+    $notNull: Type.Boolean()
+  },
+  name: {
+    $ilike: Type.String()  // Case-insensitive LIKE
+  }
+})
+
+// Now you can use custom operators
+const query = {
+  age: { $gt: 10, $notNull: true },
+  name: { $ilike: 'Dave' }
+}
+```
+
+## Validation with Custom AJV
+
+Use a custom AJV instance for advanced validation:
+
+<Steps>
+  <Step title="Create Custom AJV">
+    ```typescript
+    import Ajv from 'ajv'
+    import addFormats from 'ajv-formats'
+
+    const customAjv = new Ajv({
+      coerceTypes: true,
+      addUsedSchema: false,
+      removeAdditional: true  // Remove properties not in schema
+    })
+    addFormats(customAjv)
+    ```
+  </Step>
+  
+  <Step title="Add Custom Keywords">
+    ```typescript
+    // Add custom validation keyword for date conversion
+    customAjv.addKeyword({
+      keyword: 'convert',
+      type: 'string',
+      compile(schemaVal, parentSchema) {
+        return ['date-time', 'date'].includes(parentSchema.format) && schemaVal
+          ? function (value, obj) {
+              const { parentData, parentDataProperty } = obj
+              parentData[parentDataProperty] = new Date(value)
+              return true
+            }
+          : () => true
+      }
+    })
+    ```
+  </Step>
+  
+  <Step title="Use with Schema">
+    ```typescript
+    const userSchema = schema({
+      $id: 'User',
+      type: 'object',
+      properties: {
+        email: { type: 'string', format: 'email' },
+        createdAt: {
+          type: 'string',
+          format: 'date-time',
+          convert: true
+        }
+      }
+    } as const, customAjv)
+
+    app.service('users').hooks({
+      create: [validateData(userSchema)]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Validation Errors
+
+Validation failures throw `BadRequest` errors with detailed information:
+
+```typescript
+try {
+  await app.service('users').create({
+    // Missing required 'email' field
+    password: '12345'
+  })
+} catch (error) {
+  console.log(error.name)     // 'BadRequest'
+  console.log(error.code)     // 400
+  console.log(error.message)  // Validation error message
+  console.log(error.data)     // Array of validation errors
+  // [
+  //   {
+  //     instancePath: '',
+  //     keyword: 'required',
+  //     message: "must have required property 'email'",
+  //     params: { missingProperty: 'email' },
+  //     schemaPath: '#/required'
+  //   }
+  // ]
+}
+```
+
+## Array Validation
+
+The `validateData` hook automatically handles array data:
+
+```typescript
+import { validateData } from '@feathersjs/schema'
+
+app.service('users').hooks({
+  create: [validateData(userDataValidator)]
+})
+
+// Validates each item in the array
+await app.service('users').create([
+  { email: 'user1@example.com', password: 'pass1' },
+  { email: 'user2@example.com', password: 'pass2' }
+])
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always validate at service boundaries">
+    Apply validation hooks to prevent invalid data from entering your system:
+    
+    ```typescript
+    app.service('users').hooks([
+      validateQuery(userQueryValidator),
+      validateData(userDataValidator)
+    ])
+    ```
+  </Accordion>
+  
+  <Accordion title="Use type coercion carefully">
+    While convenient, type coercion can hide bugs. Consider disabling it for stricter validation:
+    
+    ```typescript
+    const strictAjv = new Ajv({
+      coerceTypes: false  // Require exact types
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Validate queries to prevent injection">
+    Always validate queries, especially with SQL databases:
+    
+    ```typescript
+    app.service('users').hooks({
+      find: [validateQuery(userQueryValidator)]
+    })
+    ```
+  </Accordion>
+  
+  <Accordion title="Use additionalProperties: false">
+    Prevent unexpected properties in your schemas:
+    
+    ```typescript
+    const schema = {
+      type: 'object',
+      additionalProperties: false,  // Reject unknown properties
+      properties: { /* ... */ }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Schema Resolvers" icon="arrows-rotate" href="/guides/schema/resolvers">
+    Learn how to transform data with resolvers
+  </Card>
+  
+  <Card title="Schema Overview" icon="book" href="/guides/schema/overview">
+    Back to schema system overview
+  </Card>
+</CardGroup>

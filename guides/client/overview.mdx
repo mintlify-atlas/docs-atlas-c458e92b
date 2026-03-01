@@ -1,0 +1,300 @@
+---
+title: Client Overview
+description: Learn how to use Feathers client libraries to connect to your API from the browser or Node.js
+---
+
+The Feathers client library allows you to connect to your Feathers API from any JavaScript environment, including browsers, React Native, Node.js, and other platforms. It provides the same service interface on the client as on the server.
+
+## Installation
+
+Install the main client package which includes all transport options:
+
+```bash
+npm install @feathersjs/client
+```
+
+For Node.js or when using a module bundler, you can also install individual packages:
+
+```bash
+# REST client
+npm install @feathersjs/rest-client
+
+# Socket.io client
+npm install @feathersjs/socketio-client
+```
+
+## Available Transports
+
+Feathers client supports multiple connection types:
+
+- **REST** - HTTP/HTTPS connections using fetch, axios, or superagent
+- **Socket.io** - Real-time WebSocket connections with fallback transports
+
+## Quick Start
+
+<Tabs>
+  <Tab title="Browser (REST)">
+    ```html
+    <script type="text/javascript" src="//unpkg.com/@feathersjs/client@^5.0.0/dist/feathers.js"></script>
+    <script type="text/javascript">
+      const app = feathers()
+
+      // Connect to the API
+      const restClient = feathers.rest('http://localhost:3030')
+      app.configure(restClient.fetch(window.fetch.bind(window)))
+
+      // Get a service
+      const messageService = app.service('messages')
+
+      // Use the service
+      messageService.find().then(messages => {
+        console.log('Messages:', messages)
+      })
+    </script>
+    ```
+  </Tab>
+
+  <Tab title="Browser (Socket.io)">
+    ```html
+    <script type="text/javascript" src="//unpkg.com/@feathersjs/client@^5.0.0/dist/feathers.js"></script>
+    <script src="//cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script type="text/javascript">
+      const socket = io('http://localhost:3030')
+      const app = feathers()
+
+      // Connect to the API
+      app.configure(feathers.socketio(socket))
+
+      // Get a service
+      const messageService = app.service('messages')
+
+      // Listen for real-time events
+      messageService.on('created', message => {
+        console.log('New message created:', message)
+      })
+
+      // Use the service
+      messageService.create({ text: 'Hello!' })
+    </script>
+    ```
+  </Tab>
+
+  <Tab title="Node.js (REST)">
+    ```javascript
+    import feathers from '@feathersjs/client'
+    import fetch from 'node-fetch'
+
+    const app = feathers()
+
+    // Connect to the API
+    const restClient = feathers.rest('http://localhost:3030')
+    app.configure(restClient.fetch(fetch))
+
+    // Get a service
+    const messageService = app.service('messages')
+
+    // Use the service
+    const messages = await messageService.find()
+    console.log('Messages:', messages)
+    ```
+  </Tab>
+
+  <Tab title="Node.js (Socket.io)">
+    ```javascript
+    import feathers from '@feathersjs/client'
+    import { io } from 'socket.io-client'
+
+    const socket = io('http://localhost:3030')
+    const app = feathers()
+
+    // Connect to the API
+    app.configure(feathers.socketio(socket))
+
+    // Get a service
+    const messageService = app.service('messages')
+
+    // Listen for real-time events
+    messageService.on('created', message => {
+      console.log('New message created:', message)
+    })
+
+    // Use the service
+    await messageService.create({ text: 'Hello!' })
+    ```
+  </Tab>
+</Tabs>
+
+## Using Services
+
+Once connected, you can use services the same way as on the server:
+
+```javascript
+const messages = app.service('messages')
+
+// Find all messages
+const allMessages = await messages.find()
+
+// Get a specific message
+const message = await messages.get(1)
+
+// Create a new message
+const newMessage = await messages.create({
+  text: 'Hello from the client!'
+})
+
+// Update a message
+const updated = await messages.patch(1, {
+  text: 'Updated text'
+})
+
+// Remove a message
+const removed = await messages.remove(1)
+```
+
+## Query Parameters
+
+All standard Feathers query parameters work on the client:
+
+```javascript
+const messages = app.service('messages')
+
+// Pagination
+const paginated = await messages.find({
+  query: {
+    $limit: 10,
+    $skip: 20
+  }
+})
+
+// Filtering
+const filtered = await messages.find({
+  query: {
+    read: false,
+    userId: 42
+  }
+})
+
+// Sorting
+const sorted = await messages.find({
+  query: {
+    $sort: {
+      createdAt: -1
+    }
+  }
+})
+
+// Complex queries
+const complex = await messages.find({
+  query: {
+    userId: { $in: [1, 2, 3] },
+    createdAt: { $gt: '2024-01-01' }
+  }
+})
+```
+
+## Custom Headers
+
+You can pass custom headers with requests (REST only):
+
+```javascript
+const messages = app.service('messages')
+
+const result = await messages.find({
+  headers: {
+    'Authorization': 'Bearer token',
+    'X-Custom-Header': 'value'
+  }
+})
+```
+
+## Real-time Events
+
+When using Socket.io, you can listen to real-time service events:
+
+```javascript
+const messages = app.service('messages')
+
+// Listen for created events
+messages.on('created', message => {
+  console.log('New message:', message)
+})
+
+// Listen for updated events
+messages.on('updated', message => {
+  console.log('Message updated:', message)
+})
+
+// Listen for patched events
+messages.on('patched', message => {
+  console.log('Message patched:', message)
+})
+
+// Listen for removed events
+messages.on('removed', message => {
+  console.log('Message removed:', message)
+})
+
+// Remove event listener
+const handler = message => console.log(message)
+messages.on('created', handler)
+messages.off('created', handler)
+```
+
+## Error Handling
+
+Feathers errors are automatically converted to proper error objects:
+
+```javascript
+import { errors } from '@feathersjs/client'
+
+try {
+  await messages.get(999)
+} catch (error) {
+  if (error instanceof errors.NotFound) {
+    console.log('Message not found')
+  }
+  console.log(error.code) // 404
+  console.log(error.message) // Error message
+  console.log(error.data) // Additional error data
+}
+```
+
+## TypeScript Support
+
+Feathers client has full TypeScript support:
+
+```typescript
+import { feathers } from '@feathersjs/client'
+import type { Application } from '@feathersjs/feathers'
+
+interface Message {
+  id: number
+  text: string
+  userId: number
+  createdAt: string
+}
+
+interface ServiceTypes {
+  messages: any // Service type
+  users: any
+}
+
+const app: Application<ServiceTypes> = feathers()
+
+// Typed service
+const messages = app.service('messages')
+const message: Message = await messages.get(1)
+```
+
+## Next Steps
+
+Learn more about specific client transports:
+
+<CardGroup cols={2}>
+  <Card title="REST Client" icon="globe" href="/guides/client/rest">
+    Connect using HTTP with fetch, axios, or superagent
+  </Card>
+  <Card title="Socket.io Client" icon="bolt" href="/guides/client/socketio">
+    Real-time connections with WebSocket support
+  </Card>
+</CardGroup>

@@ -1,0 +1,337 @@
+---
+title: 'Feathers - The API and Real-time Application Framework'
+description: 'Build powerful REST APIs and real-time applications with TypeScript or JavaScript. Works with any database and frontend framework.'
+---
+
+<img
+  className="block dark:hidden"
+  src="https://feathersjs.com/img/feathers-logo-wide.png"
+  alt="Feathers Framework"
+/>
+<img
+  className="hidden dark:block"
+  src="https://feathersjs.com/img/feathers-logo-wide.png"
+  alt="Feathers Framework"
+/>
+
+## Overview
+
+Feathers is a lightweight web framework for creating APIs and real-time applications using TypeScript or JavaScript. It provides everything you need to build modern web and mobile applications with minimal boilerplate.
+
+Feathers can interact with any backend technology, supports many databases out of the box, and works with any frontend like React, VueJS, Angular, React Native, Android or iOS.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get your first Feathers app running in minutes with our step-by-step guide
+  </Card>
+  <Card
+    title="Tutorial"
+    icon="book-open"
+    href="/tutorial"
+  >
+    Build a complete real-time application from scratch
+  </Card>
+  <Card
+    title="Services"
+    icon="database"
+    href="#service-architecture"
+  >
+    Learn about Feathers' powerful service-oriented architecture
+  </Card>
+  <Card
+    title="Real-time"
+    icon="bolt"
+    href="#real-time-by-default"
+  >
+    Automatic real-time events via Socket.io and WebSockets
+  </Card>
+</CardGroup>
+
+## Installation
+
+Get started with just three commands:
+
+<CodeGroup>
+
+```bash npm
+npm create feathers my-new-app
+cd my-new-app
+npm run dev
+```
+
+```bash yarn
+yarn create feathers my-new-app
+cd my-new-app
+yarn dev
+```
+
+```bash pnpm
+pnpm create feathers my-new-app
+cd my-new-app
+pnpm dev
+```
+
+</CodeGroup>
+
+## Key Features
+
+### Service Architecture
+
+Feathers is built around the concept of services. A service is an object or class that implements specific methods. Services provide a uniform, protocol-independent interface for interacting with data.
+
+```typescript packages/feathers/src/service.ts
+export const defaultServiceMethods = ['find', 'get', 'create', 'update', 'patch', 'remove']
+
+export const defaultServiceArguments = {
+  find: ['params'],
+  get: ['id', 'params'],
+  create: ['data', 'params'],
+  update: ['id', 'data', 'params'],
+  patch: ['id', 'data', 'params'],
+  remove: ['id', 'params']
+}
+```
+
+Every service automatically supports standard CRUD operations:
+
+- `find` - Find all records (with optional query)
+- `get` - Get a single record by ID
+- `create` - Create a new record
+- `update` - Replace an existing record
+- `patch` - Update specific fields of a record
+- `remove` - Remove a record
+
+### Real-time by Default
+
+Feathers automatically sends real-time events when a service method creates, updates, patches, or removes data:
+
+```typescript packages/feathers/src/service.ts
+export const defaultEventMap = {
+  create: 'created',
+  update: 'updated',
+  patch: 'patched',
+  remove: 'removed'
+}
+
+export const defaultServiceEvents = Object.values(defaultEventMap)
+```
+
+This means clients connected via Socket.io or other real-time transports automatically receive updates when data changes.
+
+### Universal API
+
+The same service interface works across multiple protocols:
+
+<CodeGroup>
+
+```typescript REST API
+// Works automatically via HTTP REST
+GET    /messages        -> messages.find()
+GET    /messages/1      -> messages.get(1)
+POST   /messages        -> messages.create(data)
+PUT    /messages/1      -> messages.update(1, data)
+PATCH  /messages/1      -> messages.patch(1, data)
+DELETE /messages/1      -> messages.remove(1)
+```
+
+```typescript Socket.io
+// Same service via Socket.io
+socket.emit('find', 'messages')
+socket.emit('get', 'messages', 1)
+socket.emit('create', 'messages', data)
+socket.emit('update', 'messages', 1, data)
+socket.emit('patch', 'messages', 1, data)
+socket.emit('remove', 'messages', 1)
+```
+
+```typescript Client SDK
+// Or use the JavaScript client
+const messages = app.service('messages')
+await messages.find()
+await messages.get(1)
+await messages.create(data)
+await messages.update(1, data)
+await messages.patch(1, data)
+await messages.remove(1)
+```
+
+</CodeGroup>
+
+### Powerful Hooks System
+
+Hooks are middleware functions that can run before, after, or around service methods. They're perfect for validation, authorization, logging, and more:
+
+```typescript packages/feathers/src/hooks.ts
+type ConvertedMap = { [type in HookType]: ReturnType<typeof convertHookData> }
+
+type HookStore = {
+  around: { [method: string]: AroundHookFunction[] }
+  before: { [method: string]: HookFunction[] }
+  after: { [method: string]: HookFunction[] }
+  error: { [method: string]: HookFunction[] }
+  collected: { [method: string]: AroundHookFunction[] }
+  collectedAll: { before?: AroundHookFunction[]; after?: AroundHookFunction[] }
+}
+```
+
+Example usage:
+
+```typescript Example
+app.service('messages').hooks({
+  before: {
+    create: [
+      async (context) => {
+        // Add timestamp
+        context.data.createdAt = new Date()
+      }
+    ]
+  },
+  after: {
+    get: [
+      async (context) => {
+        // Add computed property
+        context.result.fromHook = true
+      }
+    ]
+  }
+})
+```
+
+### Database Agnostic
+
+Feathers includes adapters for many popular databases:
+
+<CardGroup cols={3}>
+  <Card title="Memory" icon="memory">
+    In-memory data store for testing
+  </Card>
+  <Card title="MongoDB" icon="leaf">
+    Native MongoDB adapter
+  </Card>
+  <Card title="SQL (Knex)" icon="database">
+    PostgreSQL, MySQL, SQLite via Knex.js
+  </Card>
+</CardGroup>
+
+All adapters share the same interface, making it easy to switch databases:
+
+```typescript packages/memory/src/index.ts
+export class MemoryService<
+  Result = any,
+  Data = Partial<Result>,
+  ServiceParams extends AdapterParams = AdapterParams,
+  PatchData = Partial<Data>
+> extends MemoryAdapter<Result, Data, ServiceParams, PatchData> {
+  async find(params?: ServiceParams): Promise<Paginated<Result> | Result[]> {
+    return this._find({
+      ...params,
+      query: await this.sanitizeQuery(params)
+    })
+  }
+
+  async get(id: Id, params?: ServiceParams): Promise<Result> {
+    return this._get(id, {
+      ...params,
+      query: await this.sanitizeQuery(params)
+    })
+  }
+
+  async create(data: Data | Data[], params?: ServiceParams): Promise<Result | Result[]> {
+    if (Array.isArray(data) && !this.allowsMulti('create', params)) {
+      throw new MethodNotAllowed('Can not create multiple entries')
+    }
+    return this._create(data, params)
+  }
+}
+```
+
+### Express and Koa Compatible
+
+Feathers extends Express or Koa, so you can use any existing middleware:
+
+```typescript packages/express/src/index.ts
+export default function feathersExpress<S = any, C = any>(
+  feathersApp?: FeathersApplication<S, C>,
+  expressApp: Express = express()
+): Application<S, C> {
+  if (!feathersApp) {
+    return expressApp as any
+  }
+
+  if (typeof feathersApp.setup !== 'function') {
+    throw new Error('@feathersjs/express requires a valid Feathers application instance')
+  }
+
+  const app = expressApp as any as Application<S, C>
+  // ... merges Feathers and Express functionality
+
+  return app
+}
+```
+
+This means you can use CORS, compression, body parsing, and any other Express middleware:
+
+```typescript Example
+import { feathers } from '@feathersjs/feathers'
+import express, { cors, compression } from '@feathersjs/express'
+
+const app = express(feathers())
+
+app.use(cors())
+app.use(compression())
+app.use(express.json())
+```
+
+## Architecture Benefits
+
+<AccordionGroup>
+  <Accordion title="Type-Safe" icon="shield-check">
+    Full TypeScript support with generics for services, hooks, and configuration. Get autocomplete and type checking throughout your application.
+  </Accordion>
+  
+  <Accordion title="Transport Agnostic" icon="arrows-rotate">
+    Write your business logic once and expose it via REST, Socket.io, or any custom protocol. The same code works everywhere.
+  </Accordion>
+  
+  <Accordion title="Scalable" icon="chart-line">
+    Service-oriented architecture makes it easy to split functionality into microservices as your application grows.
+  </Accordion>
+  
+  <Accordion title="Extensible" icon="puzzle-piece">
+    Hooks, middleware, and plugins allow you to customize every aspect of your application without modifying core code.
+  </Accordion>
+</AccordionGroup>
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start Guide"
+    icon="play"
+    href="/quickstart"
+  >
+    Create your first Feathers application in 5 minutes
+  </Card>
+  <Card
+    title="Complete Tutorial"
+    icon="graduation-cap"
+    href="/tutorial"
+  >
+    Build a full-featured chat application step by step
+  </Card>
+</CardGroup>
+
+## Community
+
+- [GitHub](https://github.com/feathersjs/feathers) - Star the repo and contribute
+- [Discord](https://discord.gg/qa8kez8QBx) - Join the community chat
+- [Documentation](https://feathersjs.com) - Full documentation and guides
+- [NPM](https://www.npmjs.com/package/@feathersjs/feathers) - View package details
+
+<Note>
+  Feathers is MIT licensed and maintained by a vibrant community of contributors. It powers applications for startups and enterprises alike.
+</Note>

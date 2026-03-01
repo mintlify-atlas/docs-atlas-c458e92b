@@ -1,0 +1,426 @@
+---
+title: Application API
+description: Complete API reference for the Feathers application instance
+---
+
+The Feathers application is the main entry point for a Feathers server. It extends Node's EventEmitter and provides methods for registering services, configuring the application, and managing the application lifecycle.
+
+## feathers()
+
+Creates a new Feathers application instance.
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+
+const app = feathers<Services, Settings>()
+```
+
+<ParamField path="Services" type="object" optional>
+  Type definition for all services registered on the application
+</ParamField>
+
+<ParamField path="Settings" type="object" optional>
+  Type definition for application settings
+</ParamField>
+
+<ResponseField name="app" type="Application<Services, Settings>">
+  A new Feathers application instance
+</ResponseField>
+
+## Properties
+
+### version
+
+```typescript
+app.version: string
+```
+
+The Feathers version number.
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+
+const app = feathers()
+console.log(app.version) // e.g., "5.0.0"
+```
+
+### services
+
+```typescript
+app.services: Services
+```
+
+An object containing all registered services keyed by their path.
+
+<Warning>
+  Services should always be retrieved via `app.service('name')` not via `app.services`. Direct access to `app.services` is not recommended.
+</Warning>
+
+### settings
+
+```typescript
+app.settings: Settings
+```
+
+An object containing all application settings that can be accessed via `app.get()` and `app.set()`.
+
+### mixins
+
+```typescript
+app.mixins: ServiceMixin<Application<Services, Settings>>[]
+```
+
+A list of callbacks that run when a new service is registered. Used internally for adding hooks and events functionality.
+
+```typescript
+app.mixins.push((service, path, options) => {
+  console.log(`Registered service at ${path}`)
+})
+```
+
+## Methods
+
+### get()
+
+Retrieve an application setting by name.
+
+```typescript
+get<L extends keyof Settings & string>(name: L): Settings[L]
+```
+
+<ParamField path="name" type="string" required>
+  The setting name
+</ParamField>
+
+<ResponseField name="value" type="any">
+  The setting value, or `undefined` if not set
+</ResponseField>
+
+```typescript
+app.set('port', 3030)
+const port = app.get('port') // 3030
+```
+
+### set()
+
+Set an application setting.
+
+```typescript
+set<L extends keyof Settings & string>(name: L, value: Settings[L]): this
+```
+
+<ParamField path="name" type="string" required>
+  The setting name
+</ParamField>
+
+<ParamField path="value" type="any" required>
+  The setting value
+</ParamField>
+
+<ResponseField name="app" type="Application">
+  The application instance for chaining
+</ResponseField>
+
+```typescript
+app.set('port', 3030)
+  .set('host', 'localhost')
+  .set('env', 'development')
+```
+
+### configure()
+
+Runs a callback configure function with the current application instance.
+
+```typescript
+configure(callback: (this: this, app: this) => void): this
+```
+
+<ParamField path="callback" type="function" required>
+  The callback `(app: Application) => void` to run. The callback is called with `this` bound to the app instance.
+</ParamField>
+
+<ResponseField name="app" type="Application">
+  The application instance for chaining
+</ResponseField>
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+
+const configureApp = (app) => {
+  app.set('port', 3030)
+  app.set('host', 'localhost')
+}
+
+const app = feathers()
+  .configure(configureApp)
+```
+
+### use()
+
+Register a new service or a sub-app. When passed another Feathers application, all its services will be re-registered with the `path` prefix.
+
+```typescript
+use<L extends keyof Services & string>(
+  path: L,
+  service: ServiceInterface | Application,
+  options?: ServiceOptions
+): this
+```
+
+<ParamField path="path" type="string" required>
+  The path for the service to register (e.g., `'/users'`, `'/api'`)
+</ParamField>
+
+<ParamField path="service" type="ServiceInterface | Application" required>
+  The service object to register or another Feathers application to use as a sub-app
+</ParamField>
+
+<ParamField path="options" type="ServiceOptions" optional>
+  Configuration options for this service
+</ParamField>
+
+<ParamField path="options.methods" type="string[]" optional>
+  A list of service methods that should be available externally to clients
+</ParamField>
+
+<ParamField path="options.events" type="string[]" optional>
+  A list of custom events that this service emits to clients
+</ParamField>
+
+<ParamField path="options.serviceEvents" type="string[]" optional>
+  Provide a full list of events that this service should emit. Unlike `events`, this will not be merged with the default events.
+</ParamField>
+
+<ResponseField name="app" type="Application">
+  The application instance for chaining
+</ResponseField>
+
+```typescript
+// Register a service
+app.use('/users', {
+  async find(params) {
+    return []
+  },
+  async get(id, params) {
+    return { id }
+  }
+})
+
+// Register with options
+app.use('/messages', messageService, {
+  methods: ['find', 'get', 'create'],
+  events: ['typing']
+})
+
+// Register a sub-app
+const subApp = feathers()
+subApp.use('/service1', service1)
+app.use('/api', subApp) // Mounts at /api/service1
+```
+
+### service()
+
+Get the Feathers service instance for a path. This will be the service originally registered with Feathers functionality like hooks and events added.
+
+```typescript
+service<L extends keyof Services & string>(
+  path: L
+): FeathersService<this, Services[L]>
+```
+
+<ParamField path="path" type="string" required>
+  The name of the service (e.g., `'users'`, `'/api/messages'`)
+</ParamField>
+
+<ResponseField name="service" type="FeathersService">
+  The service instance with hooks and events
+</ResponseField>
+
+```typescript
+const userService = app.service('users')
+const user = await userService.get(1)
+```
+
+### unuse()
+
+Unregister an existing service. Calls `teardown` on the service if it exists.
+
+```typescript
+unuse<L extends keyof Services & string>(
+  path: L
+): Promise<FeathersService<this, Services[L]>>
+```
+
+<ParamField path="path" type="string" required>
+  The name of the service to unregister
+</ParamField>
+
+<ResponseField name="service" type="Promise<FeathersService>">
+  The unregistered service instance
+</ResponseField>
+
+```typescript
+const removedService = await app.unuse('users')
+```
+
+### setup()
+
+Set up the application and call all services' `.setup()` method if available.
+
+```typescript
+setup(server?: any): Promise<this>
+```
+
+<ParamField path="server" type="any" optional>
+  A server instance (e.g., HTTP server)
+</ParamField>
+
+<ResponseField name="app" type="Promise<Application>">
+  The application instance
+</ResponseField>
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import { createServer } from 'http'
+
+const app = feathers()
+
+app.use('/users', userService)
+
+const server = createServer(app)
+await app.setup(server)
+
+server.listen(3030)
+```
+
+### teardown()
+
+Tear down the application and call all services' `.teardown()` method if available.
+
+```typescript
+teardown(server?: any): Promise<this>
+```
+
+<ParamField path="server" type="any" optional>
+  A server instance (e.g., HTTP server)
+</ParamField>
+
+<ResponseField name="app" type="Promise<Application>">
+  The application instance
+</ResponseField>
+
+```typescript
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  await app.teardown()
+  process.exit(0)
+})
+```
+
+### hooks()
+
+Register application-level hooks that run for all services.
+
+```typescript
+hooks(map: ApplicationHookOptions<this>): this
+```
+
+<ParamField path="map" type="ApplicationHookOptions" required>
+  The application hook settings
+</ParamField>
+
+<ResponseField name="app" type="Application">
+  The application instance for chaining
+</ResponseField>
+
+See the [Hooks API](/api/core/hooks) for details on hook types and usage.
+
+```typescript
+// Register hooks for all services
+app.hooks({
+  before: {
+    all: [authenticate('jwt')]
+  },
+  error: {
+    all: [logError]
+  }
+})
+
+// Register setup/teardown hooks
+app.hooks({
+  setup: [initializeDatabase],
+  teardown: [closeConnections]
+})
+```
+
+### defaultService()
+
+Returns a fallback service instance that will be registered when no service was found. Usually throws a `NotFound` error but also used to instantiate client-side services.
+
+```typescript
+defaultService(location: string): ServiceInterface
+```
+
+<ParamField path="location" type="string" required>
+  The path of the service
+</ParamField>
+
+<ResponseField name="service" type="ServiceInterface">
+  A fallback service instance
+</ResponseField>
+
+```typescript
+// Override default behavior
+app.defaultService = (location) => {
+  return {
+    async get(id) {
+      return { id, location }
+    }
+  }
+}
+```
+
+## Events
+
+The Feathers application extends Node's `EventEmitter`, so you can use all EventEmitter methods:
+
+```typescript
+// Listen for events
+app.on('event-name', (data) => {
+  console.log('Event received:', data)
+})
+
+// Emit events
+app.emit('event-name', { some: 'data' })
+
+// Remove listener
+app.removeListener('event-name', listener)
+```
+
+## Type Definitions
+
+```typescript
+interface Application<Services = any, Settings = any>
+  extends FeathersApplication<Services, Settings>, EventEmitter {
+  version: string
+  services: Services
+  settings: Settings
+  mixins: ServiceMixin<Application<Services, Settings>>[]
+  _isSetup: boolean
+  
+  get<L extends keyof Settings & string>(name: L): Settings[L]
+  set<L extends keyof Settings & string>(name: L, value: Settings[L]): this
+  configure(callback: (this: this, app: this) => void): this
+  use<L extends keyof Services & string>(
+    path: L,
+    service: ServiceInterface | Application,
+    options?: ServiceOptions
+  ): this
+  service<L extends keyof Services & string>(path: L): FeathersService<this, Services[L]>
+  unuse<L extends keyof Services & string>(path: L): Promise<FeathersService<this, Services[L]>>
+  setup(server?: any): Promise<this>
+  teardown(server?: any): Promise<this>
+  hooks(map: ApplicationHookOptions<this>): this
+  defaultService(location: string): ServiceInterface
+}
+```

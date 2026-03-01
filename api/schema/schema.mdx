@@ -1,0 +1,244 @@
+---
+title: Schema API
+description: API reference for @feathersjs/schema schema definition and validation
+---
+
+The Schema API provides JSON Schema-based validation with automatic type inference for Feathers services.
+
+## schema
+
+Creates a schema wrapper that provides validation and type inference from a JSON Schema definition.
+
+```typescript
+import { schema } from '@feathersjs/schema'
+
+const userSchema = schema({
+  $id: 'user',
+  type: 'object',
+  required: ['email', 'password'],
+  properties: {
+    email: { type: 'string' },
+    password: { type: 'string' },
+    age: { type: 'number' }
+  }
+} as const)
+```
+
+### Parameters
+
+<ParamField path="definition" type="JSONSchemaDefinition" required>
+  JSON Schema definition object with `$id` property
+</ParamField>
+
+<ParamField path="ajv" type="Ajv" default="DEFAULT_AJV">
+  Custom AJV validator instance. Defaults to the built-in validator with `coerceTypes: true`
+</ParamField>
+
+### Returns
+
+Returns a `SchemaWrapper<S>` instance with the following members:
+
+<ResponseField name="validate" type="<T>(data: T) => Promise<T>">
+  Validates data against the schema. Returns validated (possibly coerced) data or throws `BadRequest` error
+</ResponseField>
+
+<ResponseField name="properties" type="Record<string, JSONSchema>">
+  The schema's property definitions
+</ResponseField>
+
+<ResponseField name="required" type="readonly string[]">
+  Array of required property names
+</ResponseField>
+
+<ResponseField name="definition" type="JSONSchemaDefinition">
+  The original schema definition
+</ResponseField>
+
+<ResponseField name="_type" type="FromSchema<S>">
+  Type inference helper (TypeScript only). Use with `Infer<typeof schema>` to extract the inferred type
+</ResponseField>
+
+## Types
+
+### JSONSchemaDefinition
+
+Extends standard JSON Schema with required `$id` property:
+
+```typescript
+type JSONSchemaDefinition = JSONSchema & {
+  $id: string
+  $async?: true
+  properties?: { [key: string]: JSONSchema }
+  required?: readonly string[]
+}
+```
+
+### Validator
+
+A validation function type:
+
+```typescript
+type Validator<T = any, R = T> = (data: T) => Promise<R>
+```
+
+### Infer
+
+Extract the TypeScript type from a schema:
+
+```typescript
+import { Infer } from '@feathersjs/schema'
+
+const mySchema = schema({ /* ... */ } as const)
+type MyType = Infer<typeof mySchema>
+```
+
+### Combine
+
+Combine a schema type with additional properties:
+
+```typescript
+import { Combine } from '@feathersjs/schema'
+
+type UserWithId = Combine<typeof userSchema, { id: number }>
+```
+
+## SchemaWrapper
+
+The class returned by `schema()` that wraps a JSON Schema definition.
+
+### validate
+
+Validates and coerces data according to the schema:
+
+```typescript
+try {
+  const validated = await userSchema.validate({
+    email: 'test@example.com',
+    password: 'secret',
+    age: '25' // Will be coerced to number
+  })
+} catch (error) {
+  // BadRequest with validation errors
+}
+```
+
+<ParamField path="data" type="any" required>
+  Data to validate
+</ParamField>
+
+**Returns:** `Promise<T>` - Validated and coerced data
+
+**Throws:** `BadRequest` - If validation fails
+
+### toJSON
+
+Returns the underlying schema definition:
+
+```typescript
+const definition = userSchema.toJSON()
+```
+
+## DEFAULT_AJV
+
+The default AJV instance used by schemas:
+
+```typescript
+import { DEFAULT_AJV } from '@feathersjs/schema'
+
+// Configuration:
+// - coerceTypes: true
+// - addUsedSchema: false
+```
+
+## addFormats
+
+Add format validators to an AJV instance:
+
+```typescript
+import { Ajv, addFormats } from '@feathersjs/schema'
+
+const ajv = new Ajv()
+addFormats(ajv, ['email', 'uri', 'date-time'])
+
+const schema = schema(definition, ajv)
+```
+
+### Parameters
+
+<ParamField path="ajv" type="Ajv" required>
+  AJV instance to add formats to
+</ParamField>
+
+<ParamField path="formats" type="FormatName[] | FormatsPluginOptions">
+  Array of format names or configuration object
+</ParamField>
+
+## Example Usage
+
+### Basic Schema
+
+```typescript
+import { schema, Infer } from '@feathersjs/schema'
+
+const messageSchema = schema({
+  $id: 'message',
+  type: 'object',
+  required: ['text'],
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    text: { type: 'string' },
+    userId: { type: 'number' },
+    createdAt: { type: 'string', format: 'date-time' }
+  }
+} as const)
+
+type Message = Infer<typeof messageSchema>
+```
+
+### Custom Validation
+
+```typescript
+import { Ajv, schema, addFormats } from '@feathersjs/schema'
+
+const ajv = new Ajv({
+  coerceTypes: true,
+  removeAdditional: true
+})
+
+addFormats(ajv, ['email', 'uri'])
+
+const userSchema = schema({
+  $id: 'user',
+  type: 'object',
+  properties: {
+    email: { type: 'string', format: 'email' },
+    website: { type: 'string', format: 'uri' }
+  }
+} as const, ajv)
+```
+
+### With Service
+
+```typescript
+import { schema, Infer } from '@feathersjs/schema'
+import { hooks } from '@feathersjs/schema'
+
+const userDataSchema = schema({
+  $id: 'user-data',
+  type: 'object',
+  required: ['email', 'password'],
+  properties: {
+    email: { type: 'string', format: 'email' },
+    password: { type: 'string', minLength: 8 }
+  }
+} as const)
+
+type UserData = Infer<typeof userDataSchema>
+
+app.service('users').hooks({
+  before: {
+    create: [hooks.validateData(userDataSchema)]
+  }
+})
+```

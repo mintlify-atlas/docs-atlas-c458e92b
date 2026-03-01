@@ -1,0 +1,504 @@
+---
+title: Memory Adapter
+description: API reference for the Feathers in-memory database adapter
+---
+
+The Memory adapter provides an in-memory service implementation for testing and rapid prototyping. Data is stored in memory and will be lost when the process exits.
+
+## Installation
+
+```bash
+npm install @feathersjs/memory
+```
+
+## MemoryService
+
+The main service class for in-memory operations.
+
+### Constructor
+
+```typescript
+import { MemoryService, memory } from '@feathersjs/memory'
+
+// Using the class
+const service = new MemoryService<Result, Data, ServiceParams, PatchData>(options)
+
+// Using the factory function
+const service = memory<Result, Data, ServiceParams>(options)
+```
+
+<ParamField path="options" type="MemoryServiceOptions">
+  Configuration options for the Memory adapter
+  
+  <ParamField path="id" type="string" default="id">
+    Name of the id field property
+  </ParamField>
+  
+  <ParamField path="store" type="MemoryServiceStore<T>">
+    Initial data store object with id as keys. Default is `{}`
+  </ParamField>
+  
+  <ParamField path="startId" type="number" default="0">
+    Starting value for auto-generated ids
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationParams">
+    Pagination settings with `default` and `max` page size
+  </ParamField>
+  
+  <ParamField path="multi" type="boolean | string[]">
+    Allow multiple updates. Can be `true`, `false`, or an array of method names
+  </ParamField>
+  
+  <ParamField path="matcher" type="(query: any) => any">
+    Custom query matcher function. Default uses `sift`
+  </ParamField>
+  
+  <ParamField path="sorter" type="(sort: any) => any">
+    Custom sorting function. Default uses built-in sorter
+  </ParamField>
+</ParamField>
+
+### Service Methods
+
+#### find
+
+Retrieve multiple records from memory.
+
+```typescript
+await service.find(params?)
+```
+
+<ParamField path="params" type="ServiceParams">
+  <ParamField path="query" type="AdapterQuery">
+    Query filters including `$limit`, `$skip`, `$sort`, `$select`, and comparison operators
+  </ParamField>
+  
+  <ParamField path="paginate" type="PaginationOptions | false">
+    Override pagination settings
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Paginated<Result> | Result[]">
+  Paginated results or array depending on settings
+</ResponseField>
+
+#### get
+
+Retrieve a single record by id.
+
+```typescript
+await service.get(id, params?)
+```
+
+<ParamField path="id" type="Id" required>
+  The record id to retrieve
+</ParamField>
+
+<ParamField path="params" type="ServiceParams">
+  Additional query filters to match
+</ParamField>
+
+<ResponseField name="result" type="Result">
+  The found record
+</ResponseField>
+
+#### create
+
+Create one or more new records.
+
+```typescript
+await service.create(data, params?)
+```
+
+<ParamField path="data" type="Data | Data[]" required>
+  Record data to create. If id is not provided, it will be auto-generated
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The created record(s)
+</ResponseField>
+
+#### update
+
+Completely replace a record.
+
+```typescript
+await service.update(id, data, params?)
+```
+
+<ParamField path="id" type="Id" required>
+  The record id to update
+</ParamField>
+
+<ParamField path="data" type="Data" required>
+  Complete record data to replace with
+</ParamField>
+
+<ResponseField name="result" type="Result">
+  The updated record
+</ResponseField>
+
+#### patch
+
+Partially update one or multiple records.
+
+```typescript
+await service.patch(id, data, params?)
+```
+
+<ParamField path="id" type="Id | null" required>
+  The record id to patch, or `null` to patch multiple records matching the query
+</ParamField>
+
+<ParamField path="data" type="PatchData" required>
+  Partial data to merge with existing record(s)
+</ParamField>
+
+<ParamField path="params" type="ServiceParams">
+  <ParamField path="query" type="AdapterQuery">
+    Query to filter which records to patch (when id is null)
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The patched record(s)
+</ResponseField>
+
+#### remove
+
+Remove one or multiple records.
+
+```typescript
+await service.remove(id, params?)
+```
+
+<ParamField path="id" type="Id | null" required>
+  The record id to remove, or `null` to remove multiple records
+</ParamField>
+
+<ParamField path="params" type="ServiceParams">
+  <ParamField path="query" type="AdapterQuery">
+    Query to filter which records to remove (when id is null)
+  </ParamField>
+</ParamField>
+
+<ResponseField name="result" type="Result | Result[]">
+  The removed record(s)
+</ResponseField>
+
+## MemoryAdapter
+
+The base adapter class that `MemoryService` extends.
+
+### Properties
+
+#### store
+
+Direct access to the in-memory data store.
+
+```typescript
+const allData = service.store
+// { '0': { id: 0, name: 'Item 1' }, '1': { id: 1, name: 'Item 2' } }
+```
+
+### Methods
+
+#### getEntries
+
+Retrieve all entries matching a query.
+
+```typescript
+const entries = await service.getEntries(params?)
+```
+
+<ResponseField name="result" type="Result[]">
+  Array of all matching entries
+</ResponseField>
+
+## Query Syntax
+
+The Memory adapter supports MongoDB-style query syntax via the `sift` library.
+
+### Comparison Operators
+
+```typescript
+// Equals
+await service.find({
+  query: { status: 'active' }
+})
+
+// Greater than / less than
+await service.find({
+  query: {
+    age: { $gt: 18 },
+    score: { $lte: 100 }
+  }
+})
+
+// In / not in array
+await service.find({
+  query: {
+    role: { $in: ['admin', 'moderator'] },
+    status: { $nin: ['deleted', 'banned'] }
+  }
+})
+
+// Not equal
+await service.find({
+  query: {
+    status: { $ne: 'deleted' }
+  }
+})
+```
+
+### Array Operators
+
+```typescript
+// Element in array field
+await service.find({
+  query: {
+    tags: { $elemMatch: { $eq: 'javascript' } }
+  }
+})
+
+// Array size
+await service.find({
+  query: {
+    tags: { $size: 3 }
+  }
+})
+
+// All elements match
+await service.find({
+  query: {
+    tags: { $all: ['javascript', 'nodejs'] }
+  }
+})
+```
+
+### Logical Operators
+
+```typescript
+// $or queries
+await service.find({
+  query: {
+    $or: [
+      { status: 'active' },
+      { role: 'admin' }
+    ]
+  }
+})
+
+// $and queries
+await service.find({
+  query: {
+    $and: [
+      { age: { $gte: 18 } },
+      { verified: true }
+    ]
+  }
+})
+
+// $nor queries
+await service.find({
+  query: {
+    $nor: [
+      { status: 'deleted' },
+      { banned: true }
+    ]
+  }
+})
+```
+
+### Element Operators
+
+```typescript
+// Field exists
+await service.find({
+  query: {
+    email: { $exists: true }
+  }
+})
+
+// Type checking
+await service.find({
+  query: {
+    age: { $type: 'number' }
+  }
+})
+```
+
+### Special Query Parameters
+
+```typescript
+await service.find({
+  query: {
+    status: 'active',
+    $select: ['id', 'name', 'email'],  // Select specific fields
+    $sort: { createdAt: -1, name: 1 }, // Sort descending, then ascending
+    $limit: 10,                         // Limit results
+    $skip: 20                           // Skip first 20 results
+  }
+})
+```
+
+### Regular Expressions
+
+```typescript
+// Pattern matching
+await service.find({
+  query: {
+    email: { $regex: /.*@example\.com$/ }
+  }
+})
+```
+
+## Custom Matcher and Sorter
+
+Provide custom query matching and sorting logic:
+
+```typescript
+import { memory } from '@feathersjs/memory'
+
+const service = memory({
+  matcher: (query) => {
+    // Custom matching logic
+    return (item) => {
+      if (query.customField) {
+        return item.customField === query.customField.toUpperCase()
+      }
+      return true
+    }
+  },
+  sorter: (sort) => {
+    // Custom sorting logic
+    return (a, b) => {
+      const field = Object.keys(sort)[0]
+      const direction = sort[field]
+      
+      if (a[field] < b[field]) return -1 * direction
+      if (a[field] > b[field]) return 1 * direction
+      return 0
+    }
+  }
+})
+```
+
+## Example
+
+```typescript
+import { memory, MemoryService } from '@feathersjs/memory'
+
+interface Todo {
+  id?: number
+  text: string
+  completed: boolean
+  userId: number
+}
+
+// Using factory function
+const todos = memory<Todo>({
+  id: 'id',
+  startId: 1,
+  paginate: {
+    default: 10,
+    max: 50
+  }
+})
+
+// Create todos
+const todo1 = await todos.create({
+  text: 'Learn Feathers',
+  completed: false,
+  userId: 1
+})
+
+const todo2 = await todos.create({
+  text: 'Build an app',
+  completed: false,
+  userId: 1
+})
+
+// Find incomplete todos
+const incomplete = await todos.find({
+  query: {
+    completed: false,
+    userId: 1
+  }
+})
+
+// Update a todo
+await todos.patch(todo1.id, {
+  completed: true
+})
+
+// Complex query
+const results = await todos.find({
+  query: {
+    $or: [
+      { completed: true },
+      { userId: 2 }
+    ],
+    $sort: { id: -1 },
+    $limit: 5
+  }
+})
+
+// Bulk operations
+await todos.patch(null, 
+  { completed: true },
+  {
+    query: { userId: 1 }
+  }
+)
+
+// Pre-populate with data
+const preloadedService = new MemoryService<Todo>({
+  store: {
+    1: { id: 1, text: 'Existing todo', completed: false, userId: 1 },
+    2: { id: 2, text: 'Another todo', completed: true, userId: 1 }
+  },
+  startId: 3
+})
+```
+
+## Testing
+
+The Memory adapter is ideal for testing:
+
+```typescript
+import { memory } from '@feathersjs/memory'
+import { strict as assert } from 'assert'
+
+describe('User Service', () => {
+  let service: ReturnType<typeof memory>
+  
+  beforeEach(() => {
+    service = memory()
+  })
+  
+  it('creates a user', async () => {
+    const user = await service.create({
+      email: 'test@example.com',
+      name: 'Test User'
+    })
+    
+    assert.ok(user.id)
+    assert.equal(user.email, 'test@example.com')
+  })
+  
+  it('finds users by email', async () => {
+    await service.create({
+      email: 'test@example.com',
+      name: 'Test User'
+    })
+    
+    const results = await service.find({
+      query: { email: 'test@example.com' }
+    })
+    
+    assert.equal(results.length, 1)
+  })
+})
+```

@@ -1,0 +1,281 @@
+---
+title: Configuration
+description: Environment-based configuration management for Feathers applications
+---
+
+The `@feathersjs/configuration` package provides a small but powerful configuration module for Feathers applications. It uses the [node-config](https://github.com/lorenwest/node-config) library to manage environment-specific configuration files.
+
+## Installation
+
+```bash
+npm install @feathersjs/configuration
+```
+
+## Basic Usage
+
+Configuration files should be placed in a `config/` directory at the root of your application:
+
+```
+project/
+├── config/
+│   ├── default.json
+│   ├── development.json
+│   ├── production.json
+│   └── test.json
+├── src/
+└── package.json
+```
+
+### Initialize Configuration
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import configuration from '@feathersjs/configuration'
+
+const app = feathers()
+
+app.configure(configuration())
+
+// Access configuration values
+const port = app.get('port')
+const dbUrl = app.get('database').url
+```
+
+## API
+
+### configuration
+
+Initializes the configuration module and returns a function that can be used to configure a Feathers application.
+
+```typescript
+import configuration from '@feathersjs/configuration'
+
+const configFn = configuration()
+app.configure(configFn)
+```
+
+<ParamField path="schema" type="Schema<any> | Validator">
+  Optional schema or validator function to validate configuration on setup
+</ParamField>
+
+<ResponseField name="return" type="(app?: Application) => any">
+  A function that configures the application with loaded configuration values
+</ResponseField>
+
+## Configuration Files
+
+### default.json
+
+The base configuration that applies to all environments:
+
+```json
+{
+  "host": "localhost",
+  "port": 3030,
+  "public": "./public/",
+  "database": {
+    "url": "mongodb://localhost:27017/myapp"
+  }
+}
+```
+
+### Environment-Specific Files
+
+Override defaults for specific environments:
+
+**production.json**
+```json
+{
+  "host": "myapp.com",
+  "port": 80,
+  "database": {
+    "url": "mongodb://prod-server:27017/myapp"
+  }
+}
+```
+
+**development.json**
+```json
+{
+  "database": {
+    "url": "mongodb://localhost:27017/myapp-dev"
+  }
+}
+```
+
+## Schema Validation
+
+You can validate your configuration using a schema validator. This ensures your configuration is correct before the application starts.
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import configuration from '@feathersjs/configuration'
+import { Ajv, schema } from '@feathersjs/schema'
+
+const configurationSchema = schema(
+  {
+    $id: 'ConfigurationSchema',
+    type: 'object',
+    required: ['port', 'host'],
+    properties: {
+      port: { type: 'number' },
+      host: { type: 'string' },
+      database: {
+        type: 'object',
+        required: ['url'],
+        properties: {
+          url: { type: 'string' }
+        }
+      }
+    }
+  } as const,
+  new Ajv()
+)
+
+const app = feathers()
+
+app.configure(configuration(configurationSchema))
+
+await app.setup() // Will validate configuration and throw if invalid
+```
+
+### Validation Errors
+
+If validation fails, the setup hook will throw an error with detailed information:
+
+```typescript
+try {
+  await app.setup()
+} catch (error) {
+  console.error('Configuration validation failed:', error.data)
+  // error.data contains array of validation errors
+}
+```
+
+## Using Without an App
+
+You can also use the configuration module directly without a Feathers app:
+
+```typescript
+import configuration from '@feathersjs/configuration'
+
+const config = configuration()()
+
+console.log(config.port) // 3030
+console.log(config.database.url) // mongodb://localhost:27017/myapp
+```
+
+## Environment Variables
+
+The configuration module respects the `NODE_ENV` environment variable:
+
+```bash
+# Load development.json
+NODE_ENV=development npm start
+
+# Load production.json
+NODE_ENV=production npm start
+
+# Load test.json
+NODE_ENV=test npm test
+```
+
+### Custom Config Directory
+
+You can specify a custom configuration directory using the `NODE_CONFIG_DIR` environment variable:
+
+```bash
+NODE_CONFIG_DIR=./my-config npm start
+```
+
+## Configuration Merging
+
+Configuration files are merged in the following order (later files override earlier ones):
+
+1. `default.json`
+2. `{NODE_ENV}.json` (e.g., `production.json`)
+3. `default-{instance}.json` (for multi-instance deployments)
+4. `{NODE_ENV}-{instance}.json`
+5. `local.json` (not committed to source control)
+6. `local-{instance}.json`
+
+## Advanced Features
+
+### Nested Configuration
+
+Configuration values can be deeply nested:
+
+```json
+{
+  "authentication": {
+    "secret": "my-secret",
+    "strategies": ["jwt", "local"],
+    "jwt": {
+      "header": { "typ": "access" },
+      "audience": "https://myapp.com",
+      "issuer": "feathers",
+      "algorithm": "HS256",
+      "expiresIn": "1d"
+    }
+  }
+}
+```
+
+Access nested values using dot notation:
+
+```typescript
+const jwtConfig = app.get('authentication').jwt
+const algorithm = app.get('authentication').jwt.algorithm
+```
+
+### Null Values
+
+The configuration module preserves null values:
+
+```json
+{
+  "optionalFeature": null
+}
+```
+
+```typescript
+console.log(app.get('optionalFeature')) // null
+```
+
+## Debug Logging
+
+The configuration module uses the `@feathersjs/commons` debug utility. Enable debug logging to see configuration details:
+
+```bash
+DEBUG=@feathersjs/configuration npm start
+```
+
+This will output:
+```
+@feathersjs/configuration Initializing configuration for development environment
+@feathersjs/configuration Setting port configuration value to 3030
+@feathersjs/configuration Setting database configuration value to { url: '...' }
+```
+
+## Type Safety
+
+For TypeScript users, you can type your configuration:
+
+```typescript
+interface AppConfiguration {
+  host: string
+  port: number
+  database: {
+    url: string
+  }
+  authentication: {
+    secret: string
+    jwt: {
+      expiresIn: string
+    }
+  }
+}
+
+const port = app.get<number>('port')
+const dbUrl = app.get<AppConfiguration['database']>('database').url
+```

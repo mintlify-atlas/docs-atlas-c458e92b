@@ -1,0 +1,390 @@
+---
+title: REST Client
+description: Connect to your Feathers API using REST/HTTP with fetch, axios, or superagent
+---
+
+The REST client allows you to connect to a Feathers API using HTTP/HTTPS. It supports three different HTTP libraries: fetch (recommended), axios, and superagent.
+
+## Installation
+
+<Tabs>
+  <Tab title="Full Client">
+    ```bash
+    npm install @feathersjs/client
+    ```
+  </Tab>
+
+  <Tab title="REST Only">
+    ```bash
+    npm install @feathersjs/rest-client
+    ```
+
+    For Node.js, also install your preferred HTTP library:
+
+    ```bash
+    # Using fetch (recommended)
+    npm install node-fetch
+
+    # Or using axios
+    npm install axios
+
+    # Or using superagent
+    npm install superagent
+    ```
+  </Tab>
+</Tabs>
+
+## Browser Usage
+
+In the browser, use the native fetch API:
+
+<Steps>
+  <Step title="Include the library">
+    ```html
+    <script src="//unpkg.com/@feathersjs/client@^5.0.0/dist/feathers.js"></script>
+    ```
+  </Step>
+
+  <Step title="Create the application">
+    ```javascript
+    const app = feathers()
+    ```
+  </Step>
+
+  <Step title="Configure REST client">
+    ```javascript
+    const restClient = feathers.rest('http://localhost:3030')
+    app.configure(restClient.fetch(window.fetch.bind(window)))
+    ```
+  </Step>
+
+  <Step title="Use services">
+    ```javascript
+    const todos = app.service('todos')
+
+    // Create a todo
+    const todo = await todos.create({
+      text: 'Learn Feathers',
+      complete: false
+    })
+
+    // Find all todos
+    const allTodos = await todos.find()
+    ```
+  </Step>
+</Steps>
+
+## Node.js Usage
+
+<Tabs>
+  <Tab title="Fetch (Recommended)">
+    Using the modern fetch API with node-fetch:
+
+    ```javascript
+    import feathers from '@feathersjs/client'
+    import rest from '@feathersjs/rest-client'
+    import fetch from 'node-fetch'
+
+    const app = feathers()
+
+    // Configure REST client with fetch
+    const restClient = rest('http://localhost:3030')
+    app.configure(restClient.fetch(fetch))
+
+    // Use services
+    const todos = app.service('todos')
+    const results = await todos.find()
+    ```
+  </Tab>
+
+  <Tab title="Axios">
+    Using axios for HTTP requests:
+
+    ```javascript
+    import feathers from '@feathersjs/client'
+    import rest from '@feathersjs/rest-client'
+    import axios from 'axios'
+
+    const app = feathers()
+
+    // Configure REST client with axios
+    const restClient = rest('http://localhost:3030')
+    app.configure(restClient.axios(axios))
+
+    // Use services
+    const todos = app.service('todos')
+    const results = await todos.find()
+    ```
+  </Tab>
+
+  <Tab title="Superagent">
+    Using superagent for HTTP requests:
+
+    ```javascript
+    import feathers from '@feathersjs/client'
+    import rest from '@feathersjs/rest-client'
+    import superagent from 'superagent'
+
+    const app = feathers()
+
+    // Configure REST client with superagent
+    const restClient = rest('http://localhost:3030')
+    app.configure(restClient.superagent(superagent))
+
+    // Use services
+    const todos = app.service('todos')
+    const results = await todos.find()
+    ```
+  </Tab>
+</Tabs>
+
+## Service Methods
+
+All standard Feathers service methods are available:
+
+```javascript
+const todos = app.service('todos')
+
+// Find - GET /todos
+const results = await todos.find({
+  query: {
+    complete: false,
+    $limit: 10
+  }
+})
+
+// Get - GET /todos/:id
+const todo = await todos.get(1)
+
+// Create - POST /todos
+const created = await todos.create({
+  text: 'Learn Feathers',
+  complete: false
+})
+
+// Update - PUT /todos/:id
+const updated = await todos.update(1, {
+  text: 'Learn Feathers (updated)',
+  complete: true
+})
+
+// Patch - PATCH /todos/:id
+const patched = await todos.patch(1, {
+  complete: true
+})
+
+// Remove - DELETE /todos/:id
+const removed = await todos.remove(1)
+```
+
+## Custom Headers
+
+You can pass custom headers with any service call:
+
+```javascript
+const todos = app.service('todos')
+
+// Single request with custom headers
+const results = await todos.find({
+  headers: {
+    'Authorization': 'Bearer your-token',
+    'X-Custom-Header': 'custom-value'
+  }
+})
+
+// Works with all methods
+const created = await todos.create(
+  { text: 'New todo' },
+  {
+    headers: {
+      'Authorization': 'Bearer your-token'
+    }
+  }
+)
+```
+
+## Connection Options
+
+You can pass connection-specific options using `params.connection`:
+
+<Tabs>
+  <Tab title="Fetch">
+    ```javascript
+    const todos = app.service('todos')
+
+    const results = await todos.find({
+      connection: {
+        headers: {
+          'Authorization': 'Bearer token'
+        },
+        credentials: 'include', // Send cookies
+        mode: 'cors'
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="Axios">
+    ```javascript
+    const todos = app.service('todos')
+
+    const results = await todos.find({
+      connection: {
+        timeout: 5000,
+        withCredentials: true,
+        responseType: 'json'
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="Superagent">
+    ```javascript
+    const todos = app.service('todos')
+
+    const results = await todos.find({
+      connection: {
+        'Authorization': 'Bearer token',
+        'Accept': 'application/json'
+      }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Custom Methods
+
+REST client supports custom service methods:
+
+```javascript
+import feathers from '@feathersjs/client'
+import rest from '@feathersjs/rest-client'
+import fetch from 'node-fetch'
+
+const app = feathers()
+const restClient = rest('http://localhost:3030')
+app.configure(restClient.fetch(fetch))
+
+// Register service with custom methods
+app.use('todos', restClient.service('todos'), {
+  methods: ['find', 'get', 'create', 'patch', 'customMethod']
+})
+
+const todos = app.service('todos')
+
+// Call custom method - POST /todos with X-Service-Method header
+const result = await todos.customMethod({ data: 'value' })
+```
+
+Custom methods are sent as POST requests with a special `X-Service-Method` header indicating the method name.
+
+## Direct Service Usage
+
+You can create service instances without configuring the app:
+
+```javascript
+import rest from '@feathersjs/rest-client'
+import fetch from 'node-fetch'
+
+const connection = rest('http://localhost:3030').fetch(fetch)
+const todosService = connection.service('todos')
+
+// Use the service directly
+const todos = await todosService.find()
+const todo = await todosService.get(1)
+```
+
+## Error Handling
+
+REST errors are automatically converted to Feathers errors:
+
+```javascript
+import { errors } from '@feathersjs/client'
+
+try {
+  const todo = await todos.get(999)
+} catch (error) {
+  console.log(error.code) // 404
+  console.log(error.message) // 'Not Found'
+  console.log(error.className) // 'not-found'
+  console.log(error.data) // Additional error data
+  console.log(error.response) // Original HTTP response
+
+  // Check error type
+  if (error instanceof errors.NotFound) {
+    console.log('Todo not found')
+  }
+}
+```
+
+## Base URL and Service Paths
+
+The REST client constructs URLs based on the base URL and service name:
+
+```javascript
+// Base URL: http://localhost:3030
+const restClient = rest('http://localhost:3030')
+
+// Service 'todos' -> http://localhost:3030/todos
+const todos = app.service('todos')
+
+// Service 'api/v1/users' -> http://localhost:3030/api/v1/users
+const users = app.service('api/v1/users')
+```
+
+## TypeScript Support
+
+The REST client has full TypeScript support:
+
+```typescript
+import { feathers } from '@feathersjs/client'
+import rest from '@feathersjs/rest-client'
+import fetch from 'node-fetch'
+import type { RestService } from '@feathersjs/rest-client'
+
+interface Todo {
+  id: number
+  text: string
+  complete: boolean
+}
+
+interface ServiceTypes {
+  todos: RestService<Todo>
+}
+
+const app = feathers<ServiceTypes>()
+const restClient = rest<ServiceTypes>('http://localhost:3030')
+app.configure(restClient.fetch(fetch))
+
+const todos = app.service('todos')
+const todo: Todo = await todos.get(1)
+```
+
+## Configuration Options
+
+You can pass options when creating the REST client:
+
+```javascript
+const restClient = rest('http://localhost:3030')
+
+// Configure with default headers
+const connection = restClient.fetch(fetch, {
+  headers: {
+    'X-Api-Version': '1.0',
+    'Accept': 'application/json'
+  }
+})
+
+app.configure(connection)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Socket.io Client" icon="bolt" href="/guides/client/socketio">
+    Learn about real-time connections with WebSocket support
+  </Card>
+  <Card title="Authentication" icon="lock" href="/guides/authentication">
+    Add authentication to your client application
+  </Card>
+</CardGroup>

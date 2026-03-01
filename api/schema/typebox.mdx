@@ -1,0 +1,399 @@
+---
+title: TypeBox Integration API
+description: API reference for @feathersjs/typebox schema utilities and query syntax helpers
+---
+
+The TypeBox integration provides type-safe schema definitions with Feathers-specific utilities for query syntax and validation.
+
+## Installation
+
+```bash
+npm install @feathersjs/typebox @sinclair/typebox
+```
+
+## getValidator
+
+Creates a validation function from a TypeBox schema.
+
+```typescript
+import { Type, getValidator } from '@feathersjs/typebox'
+import { Ajv } from '@feathersjs/schema'
+
+const userSchema = Type.Object({
+  email: Type.String({ format: 'email' }),
+  age: Type.Number({ minimum: 0 })
+})
+
+const ajv = new Ajv()
+const validate = getValidator(userSchema, ajv)
+
+const user = await validate({ email: 'user@example.com', age: 25 })
+```
+
+### Parameters
+
+<ParamField path="schema" type="TObject | TIntersect | TUnion<TObject[]> | TRecord" required>
+  TypeBox schema definition
+</ParamField>
+
+<ParamField path="validator" type="Ajv" required>
+  AJV validator instance
+</ParamField>
+
+### Returns
+
+`Validator<T, R>` - Async validation function that returns validated data or throws `BadRequest`
+
+## getDataValidator
+
+Creates validation functions for `create`, `update`, and `patch` service methods.
+
+```typescript
+import { Type, getDataValidator } from '@feathersjs/typebox'
+import { Ajv } from '@feathersjs/schema'
+
+const userSchema = Type.Object({
+  email: Type.String({ format: 'email' }),
+  password: Type.String({ minLength: 8 })
+})
+
+const ajv = new Ajv()
+const validators = getDataValidator(userSchema, ajv)
+
+// validators.create - requires all fields
+// validators.update - requires all fields  
+// validators.patch - no required fields
+```
+
+### Parameters
+
+<ParamField path="def" type="TObject | TDataSchemaMap" required>
+  Single schema or map of schemas for each method
+</ParamField>
+
+<ParamField path="validator" type="Ajv" required>
+  AJV validator instance
+</ParamField>
+
+**TDataSchemaMap:**
+
+```typescript
+type TDataSchemaMap = {
+  create: TObject
+  update?: TObject
+  patch?: TObject
+}
+```
+
+### Returns
+
+`DataValidatorMap` - Object with `create`, `update`, and `patch` validators
+
+### Behavior
+
+- If only `create` is provided, `update` uses the same schema
+- `patch` uses `create` schema with no required fields
+- Schemas are automatically given IDs with `Update` and `Patch` suffixes
+
+## StringEnum
+
+Creates a string enum schema from an array of allowed values.
+
+```typescript
+import { StringEnum } from '@feathersjs/typebox'
+
+const roleSchema = StringEnum(['admin', 'user', 'guest'])
+
+const userSchema = Type.Object({
+  name: Type.String(),
+  role: StringEnum(['admin', 'user', 'guest'], { default: 'user' })
+})
+```
+
+### Parameters
+
+<ParamField path="allowedValues" type="string[]" required>
+  Array of allowed string values
+</ParamField>
+
+<ParamField path="options" type="{ default?: string }">
+  Optional configuration with default value
+</ParamField>
+
+### Returns
+
+TypeBox schema with string enum constraint
+
+## Query Syntax Utilities
+
+Utilities to create Feathers query syntax schemas with operators like `$gt`, `$in`, etc.
+
+### queryProperty
+
+Creates query syntax schema for a single property.
+
+```typescript
+import { Type, queryProperty } from '@feathersjs/typebox'
+
+const ageQuery = queryProperty(
+  Type.Number(),
+  { $regex: Type.String() } // Additional operators
+)
+
+// Allows: age: 25 or age: { $gt: 18, $lt: 65 }
+```
+
+<ParamField path="def" type="TSchema" required>
+  TypeBox schema for the property
+</ParamField>
+
+<ParamField path="extension" type="{ [key: string]: TSchema }" default="{}">
+  Additional query operators to support
+</ParamField>
+
+**Returns:** Optional union of direct value or operators object
+
+**Supported operators:**
+- `$gt`, `$gte` - Greater than (or equal)
+- `$lt`, `$lte` - Less than (or equal)  
+- `$ne` - Not equal
+- `$in`, `$nin` - In/not in array
+
+### queryProperties
+
+Creates query syntax schemas for multiple properties.
+
+```typescript
+import { Type, queryProperties } from '@feathersjs/typebox'
+
+const userType = Type.Object({
+  name: Type.String(),
+  age: Type.Number(),
+  email: Type.String()
+})
+
+const queryProps = queryProperties(userType, {
+  name: { $regex: Type.String() },
+  email: { $regex: Type.String() }
+})
+```
+
+<ParamField path="definition" type="TObject" required>
+  TypeBox object with properties to create queries for
+</ParamField>
+
+<ParamField path="extensions" type="{ [K in keyof T]?: { [key: string]: TSchema } }" default="{}">
+  Per-property additional operators
+</ParamField>
+
+**Returns:** Optional object with query syntax for each property
+
+### querySyntax
+
+Creates complete Feathers query schema including `$limit`, `$skip`, `$sort`, `$select`, `$or`, and `$and`.
+
+```typescript
+import { Type, querySyntax } from '@feathersjs/typebox'
+
+const userType = Type.Object({
+  id: Type.Number(),
+  name: Type.String(),
+  age: Type.Number(),
+  email: Type.String()
+})
+
+const userQuerySchema = querySyntax(userType)
+
+// Supports full Feathers query syntax:
+// {
+//   name: 'John',
+//   age: { $gte: 18 },
+//   $limit: 10,
+//   $skip: 0,
+//   $sort: { name: 1 },
+//   $select: ['name', 'email'],
+//   $or: [{ age: { $lt: 18 } }, { age: { $gt: 65 } }]
+// }
+```
+
+<ParamField path="type" type="TObject" required>
+  TypeBox object defining queryable properties
+</ParamField>
+
+<ParamField path="extensions" type="{ [K in keyof T]?: { [key: string]: TSchema } }" default="{}">
+  Additional operators per property
+</ParamField>
+
+<ParamField path="options" type="ObjectOptions" default="{ additionalProperties: false }">
+  TypeBox object options
+</ParamField>
+
+**Returns:** TypeBox intersection with query operators and property queries
+
+**Query operators:**
+
+<ResponseField name="$limit" type="number">
+  Maximum number of results (minimum: 0)
+</ResponseField>
+
+<ResponseField name="$skip" type="number">
+  Number of results to skip (minimum: 0)
+</ResponseField>
+
+<ResponseField name="$sort" type="{ [K in keyof T]?: 1 | -1 }">
+  Sort order for properties (1 = ascending, -1 = descending)
+</ResponseField>
+
+<ResponseField name="$select" type="(keyof T)[]">
+  Array of property names to include in results
+</ResponseField>
+
+<ResponseField name="$or" type="Array<PropertyQuery>">
+  Array of query objects (OR logic)
+</ResponseField>
+
+<ResponseField name="$and" type="Array<PropertyQuery | { $or }>">
+  Array of query objects (AND logic)
+</ResponseField>
+
+### sortDefinition
+
+Creates the `$sort` schema for an object.
+
+```typescript
+import { Type, sortDefinition } from '@feathersjs/typebox'
+
+const userType = Type.Object({
+  name: Type.String(),
+  age: Type.Number()
+})
+
+const sortSchema = sortDefinition(userType)
+// Allows: { name: 1, age: -1 }
+```
+
+<ParamField path="schema" type="TObject" required>
+  TypeBox object to create sort schema for
+</ParamField>
+
+**Returns:** Object schema with optional integer properties (values: -1 or 1)
+
+## ObjectIdSchema
+
+Schema for MongoDB ObjectId that accepts string or object formats.
+
+```typescript
+import { ObjectIdSchema } from '@feathersjs/typebox'
+
+const messageSchema = Type.Object({
+  _id: ObjectIdSchema(),
+  userId: ObjectIdSchema(),
+  text: Type.String()
+})
+```
+
+**Returns:** Union of string with `objectid: true` or object with additional properties
+
+## Complete Example
+
+```typescript
+import { Type, Static, getDataValidator, querySyntax, StringEnum } from '@feathersjs/typebox'
+import { Ajv } from '@feathersjs/schema'
+
+// Define user schema
+const userSchema = Type.Object(
+  {
+    id: Type.Number(),
+    email: Type.String({ format: 'email' }),
+    password: Type.String({ minLength: 8 }),
+    role: StringEnum(['admin', 'user', 'guest'], { default: 'user' }),
+    age: Type.Optional(Type.Number({ minimum: 0, maximum: 120 })),
+    createdAt: Type.String({ format: 'date-time' })
+  },
+  { $id: 'User', additionalProperties: false }
+)
+
+type User = Static<typeof userSchema>
+
+// Create data validators
+const ajv = new Ajv({ coerceTypes: true })
+const userDataValidator = getDataValidator(
+  {
+    create: Type.Object({
+      email: Type.String({ format: 'email' }),
+      password: Type.String({ minLength: 8 }),
+      role: Type.Optional(StringEnum(['admin', 'user', 'guest']))
+    }),
+    patch: Type.Partial(Type.Object({
+      email: Type.String({ format: 'email' }),
+      password: Type.String({ minLength: 8 }),
+      role: StringEnum(['admin', 'user', 'guest'])
+    }))
+  },
+  ajv
+)
+
+// Create query schema
+const userQueryProperties = Type.Pick(userSchema, ['id', 'email', 'role', 'age'])
+const userQuerySchema = querySyntax(userQueryProperties)
+
+type UserQuery = Static<typeof userQuerySchema>
+
+// Use in service
+app.service('users').hooks({
+  before: {
+    find: [hooks.validateQuery(getValidator(userQuerySchema, ajv))],
+    create: [hooks.validateData(userDataValidator)],
+    patch: [hooks.validateData(userDataValidator)]
+  }
+})
+
+// Example queries
+const query1: UserQuery = {
+  age: { $gte: 18, $lte: 65 },
+  role: { $in: ['admin', 'user'] },
+  $limit: 10,
+  $sort: { createdAt: -1 }
+}
+
+const query2: UserQuery = {
+  $or: [
+    { email: 'admin@example.com' },
+    { role: 'admin' }
+  ],
+  $select: ['id', 'email', 'role']
+}
+```
+
+## Type Inference
+
+Use `Static` from TypeBox for type inference:
+
+```typescript
+import { Type, Static } from '@feathersjs/typebox'
+
+const messageSchema = Type.Object({
+  id: Type.Number(),
+  text: Type.String(),
+  userId: Type.Number()
+})
+
+type Message = Static<typeof messageSchema>
+
+const message: Message = {
+  id: 1,
+  text: 'Hello',
+  userId: 123
+}
+```
+
+## Re-exports
+
+All TypeBox types and utilities are re-exported:
+
+```typescript
+import { Type, Static, TObject, TString, TNumber } from '@feathersjs/typebox'
+
+// Equivalent to:
+import { Type, Static, TObject, TString, TNumber } from '@sinclair/typebox'
+```

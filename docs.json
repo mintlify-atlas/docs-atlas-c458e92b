@@ -1,122 +1,165 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Feathers",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#7e22ce",
+    "light": "#a855f7",
+    "dark": "#581c87"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/feathersjs/feathers"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/feathersjs/feathers"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "tutorial"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/application",
+              "concepts/services",
+              "concepts/hooks",
+              "concepts/events",
+              "concepts/errors"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Guides",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
-            ]
-          },
-          {
-            "group": "AI tools",
-            "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/basics/setup",
+              "guides/basics/services",
+              "guides/basics/hooks",
+              "guides/basics/routing",
+              "guides/authentication/overview",
+              "guides/authentication/jwt",
+              "guides/authentication/oauth",
+              "guides/authentication/local",
+              "guides/databases/overview",
+              "guides/databases/mongodb",
+              "guides/databases/knex",
+              "guides/databases/adapters",
+              "guides/transports/express",
+              "guides/transports/koa",
+              "guides/transports/socketio",
+              "guides/schema/overview",
+              "guides/schema/validation",
+              "guides/schema/resolvers",
+              "guides/client/overview",
+              "guides/client/rest",
+              "guides/client/socketio",
+              "guides/advanced/configuration",
+              "guides/advanced/testing",
+              "guides/advanced/deployment"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core",
             "pages": [
-              "api-reference/introduction"
+              "api/core/application",
+              "api/core/services",
+              "api/core/hooks",
+              "api/core/events",
+              "api/core/errors"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Authentication",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/authentication/server",
+              "api/authentication/client",
+              "api/authentication/local",
+              "api/authentication/oauth"
+            ]
+          },
+          {
+            "group": "Databases",
+            "pages": [
+              "api/databases/mongodb",
+              "api/databases/knex",
+              "api/databases/memory",
+              "api/databases/adapter-commons"
+            ]
+          },
+          {
+            "group": "Transports",
+            "pages": [
+              "api/transports/express",
+              "api/transports/koa",
+              "api/transports/socketio",
+              "api/transports/rest-client",
+              "api/transports/socketio-client"
+            ]
+          },
+          {
+            "group": "Schema",
+            "pages": [
+              "api/schema/schema",
+              "api/schema/resolvers",
+              "api/schema/typebox"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utilities/commons",
+              "api/utilities/configuration",
+              "api/utilities/client"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "cli/overview",
+              "cli/installation"
+            ]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "cli/commands/generate",
+              "cli/commands/app",
+              "cli/commands/service",
+              "cli/commands/hook"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "cli/configuration/app",
+              "cli/configuration/database",
+              "cli/configuration/authentication"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

@@ -1,0 +1,535 @@
+---
+title: Errors API
+description: Complete API reference for Feathers error classes
+---
+
+Feathers provides a set of standard error classes that represent common HTTP errors. These errors work seamlessly across different transports (REST, WebSockets) and can be easily serialized and sent to clients.
+
+## FeathersError
+
+The base class for all Feathers errors.
+
+```typescript
+class FeathersError extends Error {
+  constructor(
+    message: ErrorMessage,
+    name: string,
+    code: number,
+    className: string,
+    data: any
+  )
+}
+```
+
+<ParamField path="message" type="string | Error | object" required>
+  The error message or an error object
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  The error name (e.g., `'BadRequest'`)
+</ParamField>
+
+<ParamField path="code" type="number" required>
+  The HTTP status code (e.g., `400`)
+</ParamField>
+
+<ParamField path="className" type="string" required>
+  The class name in kebab-case (e.g., `'bad-request'`)
+</ParamField>
+
+<ParamField path="data" type="any" optional>
+  Additional error data
+</ParamField>
+
+### Properties
+
+<ResponseField name="type" type="string">
+  Always `'FeathersError'`
+</ResponseField>
+
+<ResponseField name="code" type="number">
+  The HTTP status code
+</ResponseField>
+
+<ResponseField name="className" type="string">
+  The error class name in kebab-case
+</ResponseField>
+
+<ResponseField name="data" type="any">
+  Additional error data
+</ResponseField>
+
+<ResponseField name="errors" type="any">
+  Validation errors or sub-errors
+</ResponseField>
+
+### Methods
+
+#### toJSON()
+
+Serialize the error to JSON:
+
+```typescript
+toJSON(): FeathersErrorJSON
+```
+
+```typescript
+const error = new BadRequest('Invalid input', {
+  field: 'email'
+})
+
+const json = error.toJSON()
+// {
+//   name: 'BadRequest',
+//   message: 'Invalid input',
+//   code: 400,
+//   className: 'bad-request',
+//   data: { field: 'email' }
+// }
+```
+
+## Error Classes
+
+All error classes extend `FeathersError` and follow the same constructor pattern:
+
+```typescript
+new ErrorClass(message?: ErrorMessage, data?: any)
+```
+
+### 4xx Client Errors
+
+#### BadRequest (400)
+
+General client error.
+
+```typescript
+import { BadRequest } from '@feathersjs/errors'
+
+throw new BadRequest('Invalid request parameters')
+
+throw new BadRequest('Validation failed', {
+  errors: {
+    email: 'Email is required',
+    password: 'Password must be at least 8 characters'
+  }
+})
+```
+
+#### NotAuthenticated (401)
+
+User is not authenticated.
+
+```typescript
+import { NotAuthenticated } from '@feathersjs/errors'
+
+throw new NotAuthenticated('Authentication token missing')
+
+throw new NotAuthenticated('Invalid credentials')
+```
+
+#### PaymentError (402)
+
+Payment required or payment failed.
+
+```typescript
+import { PaymentError } from '@feathersjs/errors'
+
+throw new PaymentError('Payment required to access this resource')
+
+throw new PaymentError('Credit card declined', {
+  paymentId: '123',
+  reason: 'insufficient_funds'
+})
+```
+
+#### Forbidden (403)
+
+User is authenticated but not authorized.
+
+```typescript
+import { Forbidden } from '@feathersjs/errors'
+
+throw new Forbidden('You do not have permission to access this resource')
+
+throw new Forbidden('Admin access required')
+```
+
+#### NotFound (404)
+
+Resource not found.
+
+```typescript
+import { NotFound } from '@feathersjs/errors'
+
+throw new NotFound('User not found')
+
+throw new NotFound(`User with id ${id} does not exist`)
+```
+
+#### MethodNotAllowed (405)
+
+HTTP method not allowed.
+
+```typescript
+import { MethodNotAllowed } from '@feathersjs/errors'
+
+throw new MethodNotAllowed('DELETE method is not allowed on this resource')
+```
+
+#### NotAcceptable (406)
+
+Requested format is not available.
+
+```typescript
+import { NotAcceptable } from '@feathersjs/errors'
+
+throw new NotAcceptable('Only JSON format is supported')
+```
+
+#### Timeout (408)
+
+Request timeout.
+
+```typescript
+import { Timeout } from '@feathersjs/errors'
+
+throw new Timeout('Request took too long to process')
+```
+
+#### Conflict (409)
+
+Request conflicts with current state.
+
+```typescript
+import { Conflict } from '@feathersjs/errors'
+
+throw new Conflict('A user with this email already exists')
+
+throw new Conflict('Resource version mismatch', {
+  currentVersion: 2,
+  requestedVersion: 1
+})
+```
+
+#### Gone (410)
+
+Resource is permanently gone.
+
+```typescript
+import { Gone } from '@feathersjs/errors'
+
+throw new Gone('This resource has been permanently deleted')
+```
+
+#### LengthRequired (411)
+
+Content-Length header required.
+
+```typescript
+import { LengthRequired } from '@feathersjs/errors'
+
+throw new LengthRequired('Content-Length header is required')
+```
+
+#### Unprocessable (422)
+
+Request is well-formed but contains semantic errors.
+
+```typescript
+import { Unprocessable } from '@feathersjs/errors'
+
+throw new Unprocessable('Cannot process this request', {
+  reason: 'duplicate_entry'
+})
+```
+
+#### TooManyRequests (429)
+
+Rate limit exceeded.
+
+```typescript
+import { TooManyRequests } from '@feathersjs/errors'
+
+throw new TooManyRequests('Rate limit exceeded. Try again in 60 seconds', {
+  retryAfter: 60
+})
+```
+
+### 5xx Server Errors
+
+#### GeneralError (500)
+
+General server error.
+
+```typescript
+import { GeneralError } from '@feathersjs/errors'
+
+throw new GeneralError('An unexpected error occurred')
+```
+
+#### NotImplemented (501)
+
+Feature not implemented.
+
+```typescript
+import { NotImplemented } from '@feathersjs/errors'
+
+throw new NotImplemented('This feature is not yet implemented')
+```
+
+#### BadGateway (502)
+
+Bad gateway or upstream server error.
+
+```typescript
+import { BadGateway } from '@feathersjs/errors'
+
+throw new BadGateway('Upstream service is unavailable')
+```
+
+#### Unavailable (503)
+
+Service temporarily unavailable.
+
+```typescript
+import { Unavailable } from '@feathersjs/errors'
+
+throw new Unavailable('Service is under maintenance', {
+  retryAfter: 3600
+})
+```
+
+## Error Object Formats
+
+### Error Message Types
+
+```typescript
+type ErrorMessage = 
+  | null 
+  | string 
+  | Error 
+  | { message?: string; errors?: any; [key: string]: any } 
+  | any[]
+```
+
+Errors can be created with various input formats:
+
+```typescript
+// String message
+throw new BadRequest('Invalid input')
+
+// Object with message and data
+throw new BadRequest({
+  message: 'Validation failed',
+  errors: {
+    email: 'Invalid format',
+    age: 'Must be positive'
+  }
+})
+
+// Existing Error object
+try {
+  await dangerousOperation()
+} catch (err) {
+  throw new GeneralError(err)
+}
+
+// Additional data as second parameter
+throw new NotFound('User not found', {
+  userId: 123,
+  timestamp: new Date()
+})
+```
+
+### JSON Format
+
+```typescript
+interface FeathersErrorJSON {
+  name: string
+  message: string
+  code: number
+  className: string
+  data?: any
+  errors?: any
+}
+```
+
+## Error Handling
+
+### In Hooks
+
+```typescript
+const handleError = async (context) => {
+  const { error } = context
+  
+  // Log the error
+  console.error(`Error in ${context.path}.${context.method}:`, error)
+  
+  // Transform unknown errors
+  if (!(error instanceof FeathersError)) {
+    context.error = new GeneralError('An unexpected error occurred')
+  }
+}
+
+app.hooks({
+  error: {
+    all: [handleError]
+  }
+})
+```
+
+### In Services
+
+```typescript
+class UserService {
+  async get(id, params) {
+    const user = await db.users.findById(id)
+    
+    if (!user) {
+      throw new NotFound(`User ${id} not found`)
+    }
+    
+    // Check authorization
+    if (user.id !== params.user?.id && !params.user?.isAdmin) {
+      throw new Forbidden('You can only access your own user data')
+    }
+    
+    return user
+  }
+  
+  async create(data, params) {
+    // Validate input
+    if (!data.email) {
+      throw new BadRequest('Email is required')
+    }
+    
+    // Check for duplicates
+    const existing = await db.users.findByEmail(data.email)
+    if (existing) {
+      throw new Conflict('A user with this email already exists')
+    }
+    
+    return await db.users.create(data)
+  }
+}
+```
+
+### With Try/Catch
+
+```typescript
+try {
+  const user = await app.service('users').get(123)
+} catch (error) {
+  if (error instanceof NotFound) {
+    console.log('User does not exist')
+  } else if (error instanceof Forbidden) {
+    console.log('Access denied')
+  } else {
+    console.error('Unexpected error:', error)
+  }
+}
+```
+
+## Converting Errors
+
+Convert plain error objects to Feathers errors:
+
+```typescript
+import { convert } from '@feathersjs/errors'
+
+const error = {
+  name: 'NotFound',
+  message: 'User not found',
+  data: { userId: 123 }
+}
+
+const feathersError = convert(error)
+// Returns: NotFound instance
+```
+
+<ParamField path="error" type="any" required>
+  Error object or value to convert
+</ParamField>
+
+<ResponseField name="result" type="Error">
+  A FeathersError instance if the error name matches, otherwise a generic Error
+</ResponseField>
+
+## Accessing Errors by Code
+
+Errors can be accessed by their HTTP status code:
+
+```typescript
+import { errors } from '@feathersjs/errors'
+
+const NotFoundError = errors[404]
+throw new NotFoundError('Resource not found')
+
+const BadRequestError = errors[400]
+throw new BadRequestError('Invalid input')
+```
+
+## Type Definitions
+
+```typescript
+import {
+  FeathersError,
+  BadRequest,
+  NotAuthenticated,
+  PaymentError,
+  Forbidden,
+  NotFound,
+  MethodNotAllowed,
+  NotAcceptable,
+  Timeout,
+  Conflict,
+  Gone,
+  LengthRequired,
+  Unprocessable,
+  TooManyRequests,
+  GeneralError,
+  NotImplemented,
+  BadGateway,
+  Unavailable,
+  errors,
+  convert
+} from '@feathersjs/errors'
+
+interface FeathersErrorJSON {
+  name: string
+  message: string
+  code: number
+  className: string
+  data?: any
+  errors?: any
+}
+
+type ErrorMessage = 
+  | null 
+  | string 
+  | Error 
+  | { message?: string; errors?: any; [key: string]: any } 
+  | any[]
+```
+
+## Complete Error List
+
+| Class | Code | Description |
+|-------|------|-------------|
+| BadRequest | 400 | General client error |
+| NotAuthenticated | 401 | User not authenticated |
+| PaymentError | 402 | Payment required/failed |
+| Forbidden | 403 | User not authorized |
+| NotFound | 404 | Resource not found |
+| MethodNotAllowed | 405 | HTTP method not allowed |
+| NotAcceptable | 406 | Requested format unavailable |
+| Timeout | 408 | Request timeout |
+| Conflict | 409 | Request conflicts with state |
+| Gone | 410 | Resource permanently deleted |
+| LengthRequired | 411 | Content-Length required |
+| Unprocessable | 422 | Semantic error in request |
+| TooManyRequests | 429 | Rate limit exceeded |
+| GeneralError | 500 | General server error |
+| NotImplemented | 501 | Feature not implemented |
+| BadGateway | 502 | Upstream server error |
+| Unavailable | 503 | Service unavailable |

@@ -1,0 +1,674 @@
+---
+title: OAuth Strategy API
+description: Complete API reference for @feathersjs/authentication-oauth for OAuth 2.0 authentication
+---
+
+The `@feathersjs/authentication-oauth` package provides OAuth 2.0 authentication for various providers like Google, Facebook, GitHub, and more.
+
+## Installation
+
+```bash
+npm install @feathersjs/authentication-oauth
+```
+
+## Setup
+
+Configure and register OAuth authentication:
+
+```typescript
+import { oauth, OAuthStrategy } from '@feathersjs/authentication-oauth'
+
+app.configure(oauth(options))
+```
+
+### Options
+
+```typescript
+interface OauthSetupSettings {
+  linkStrategy?: string
+  authService?: string
+  expressSession?: RequestHandler
+  koaSession?: Middleware
+}
+```
+
+<ParamField path="linkStrategy" type="string" default="jwt">
+  The strategy to use for linking existing accounts
+</ParamField>
+
+<ParamField path="authService" type="string">
+  The path to the authentication service (defaults to app default)
+</ParamField>
+
+<ParamField path="expressSession" type="RequestHandler">
+  Custom Express session middleware
+</ParamField>
+
+<ParamField path="koaSession" type="Middleware">
+  Custom Koa session middleware
+</ParamField>
+
+## Configuration
+
+Configure OAuth providers in your authentication settings:
+
+```typescript
+interface OAuthConfiguration {
+  redirect?: string
+  origins?: string[]
+  defaults?: {
+    prefix?: string
+    origin?: string
+    transport?: string
+    response?: string[]
+  }
+  [provider: string]: {
+    key: string
+    secret: string
+    scope?: string[]
+    custom_params?: object
+    [key: string]: any
+  }
+}
+```
+
+<ParamField path="redirect" type="string">
+  The URL to redirect to after authentication. If not set, will use the first origin in `origins`
+</ParamField>
+
+<ParamField path="origins" type="string[]">
+  Array of allowed redirect origins for security. Supports multiple origins for different environments
+</ParamField>
+
+<ParamField path="defaults" type="object">
+  Default settings for all OAuth providers:
+  - `prefix`: URL prefix for OAuth routes (default: '/oauth')
+  - `origin`: Server origin URL
+  - `transport`: How to send the response (default: 'state')
+  - `response`: What to include in response (default: ['tokens', 'raw', 'profile'])
+</ParamField>
+
+<ParamField path="[provider]" type="object">
+  Configuration for each OAuth provider (e.g., 'google', 'github'):
+  - `key`: OAuth client ID
+  - `secret`: OAuth client secret
+  - `scope`: Requested OAuth scopes
+  - `custom_params`: Additional provider-specific parameters
+</ParamField>
+
+**Example:**
+
+```typescript
+// config/default.json
+{
+  "authentication": {
+    "secret": "your-secret-key",
+    "authStrategies": ["jwt", "local", "google", "github"],
+    "service": "users",
+    "entity": "user",
+    "oauth": {
+      "redirect": "http://localhost:3000",
+      "origins": [
+        "http://localhost:3000",
+        "https://yourdomain.com"
+      ],
+      "google": {
+        "key": "your-google-client-id",
+        "secret": "your-google-client-secret",
+        "scope": ["email", "profile"],
+        "custom_params": {
+          "access_type": "offline"
+        }
+      },
+      "github": {
+        "key": "your-github-client-id",
+        "secret": "your-github-client-secret",
+        "scope": ["user", "repo"]
+      },
+      "facebook": {
+        "key": "your-facebook-app-id",
+        "secret": "your-facebook-app-secret"
+      }
+    }
+  }
+}
+```
+
+## OAuthStrategy
+
+Base class for OAuth authentication strategies.
+
+### Setup
+
+Register OAuth strategies:
+
+```typescript
+import { AuthenticationService } from '@feathersjs/authentication'
+import { oauth, OAuthStrategy } from '@feathersjs/authentication-oauth'
+
+// OAuth will automatically register strategies for each configured provider
+app.configure(oauth())
+
+// Or manually register custom OAuth strategies
+class GoogleStrategy extends OAuthStrategy {
+  async getProfile(data, params) {
+    // Custom profile parsing
+    return data.profile
+  }
+}
+
+authService.register('google', new GoogleStrategy())
+```
+
+### Methods
+
+#### getEntityQuery
+
+Build the query to find an existing entity by OAuth profile. Override to customize.
+
+```typescript
+strategy.getEntityQuery(
+  profile: OAuthProfile,
+  params: Params
+): Promise<Query>
+```
+
+<ParamField path="profile" type="OAuthProfile" required>
+  The OAuth profile from the provider
+  
+  ```typescript
+  interface OAuthProfile {
+    id?: string | number
+    [key: string]: any
+  }
+  ```
+</ParamField>
+
+<ParamField path="params" type="Params" required>
+  Service call parameters
+</ParamField>
+
+**Default behavior:**
+
+```typescript
+return {
+  [`${this.name}Id`]: profile.sub || profile.id
+}
+```
+
+**Example:**
+
+```typescript
+class GoogleStrategy extends OAuthStrategy {
+  async getEntityQuery(profile, params) {
+    return {
+      googleId: profile.sub,
+      // Also match by email if provided
+      email: profile.email
+    }
+  }
+}
+```
+
+#### getEntityData
+
+Get the data to store when creating or updating an entity. Override to customize.
+
+```typescript
+strategy.getEntityData(
+  profile: OAuthProfile,
+  existingEntity: any,
+  params: Params
+): Promise<object>
+```
+
+<ParamField path="profile" type="OAuthProfile" required>
+  The OAuth profile from the provider
+</ParamField>
+
+<ParamField path="existingEntity" type="any" required>
+  The existing entity if found, null otherwise
+</ParamField>
+
+<ParamField path="params" type="Params" required>
+  Service call parameters
+</ParamField>
+
+**Default behavior:**
+
+```typescript
+return {
+  [`${this.name}Id`]: profile.sub || profile.id
+}
+```
+
+**Example:**
+
+```typescript
+class GoogleStrategy extends OAuthStrategy {
+  async getEntityData(profile, existingEntity, params) {
+    return {
+      googleId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+      picture: profile.picture,
+      // Only set on first creation
+      ...(!existingEntity && {
+        createdViaOAuth: true,
+        emailVerified: profile.email_verified
+      })
+    }
+  }
+}
+```
+
+#### getProfile
+
+Extract the profile from the authentication data. Override to customize.
+
+```typescript
+strategy.getProfile(
+  data: AuthenticationRequest,
+  params: Params
+): Promise<OAuthProfile>
+```
+
+<ParamField path="data" type="AuthenticationRequest" required>
+  The authentication request data
+</ParamField>
+
+<ParamField path="params" type="Params" required>
+  Service call parameters
+</ParamField>
+
+**Example:**
+
+```typescript
+class GoogleStrategy extends OAuthStrategy {
+  async getProfile(data, params) {
+    const profile = data.profile
+    
+    // Add custom fields or transform profile
+    return {
+      ...profile,
+      customField: 'value'
+    }
+  }
+}
+```
+
+#### getRedirect
+
+Get the redirect URL after authentication. Override to customize.
+
+```typescript
+strategy.getRedirect(
+  data: AuthenticationResult | Error,
+  params?: AuthenticationParams
+): Promise<string | null>
+```
+
+<ParamField path="data" type="AuthenticationResult | Error" required>
+  The authentication result or error
+</ParamField>
+
+<ParamField path="params" type="AuthenticationParams">
+  Service call parameters
+</ParamField>
+
+**Example:**
+
+```typescript
+class GoogleStrategy extends OAuthStrategy {
+  async getRedirect(data, params) {
+    const baseRedirect = await super.getRedirect(data, params)
+    
+    // Add custom query parameters
+    if (data.user?.isNewUser) {
+      return `${baseRedirect}&onboarding=true`
+    }
+    
+    return baseRedirect
+  }
+}
+```
+
+#### getCurrentEntity
+
+Get the currently authenticated entity for account linking.
+
+```typescript
+strategy.getCurrentEntity(params: Params): Promise<any>
+```
+
+<ParamField path="params" type="Params" required>
+  Service call parameters (should include authentication info)
+</ParamField>
+
+#### findEntity
+
+Find an entity by OAuth profile.
+
+```typescript
+strategy.findEntity(
+  profile: OAuthProfile,
+  params: Params
+): Promise<any>
+```
+
+#### createEntity
+
+Create a new entity from OAuth profile.
+
+```typescript
+strategy.createEntity(
+  profile: OAuthProfile,
+  params: Params
+): Promise<any>
+```
+
+#### updateEntity
+
+Update an existing entity with OAuth profile data.
+
+```typescript
+strategy.updateEntity(
+  entity: any,
+  profile: OAuthProfile,
+  params: Params
+): Promise<any>
+```
+
+## OAuth Flow
+
+The OAuth authentication flow:
+
+### 1. Initiate OAuth Flow
+
+Client redirects to:
+
+```
+GET /oauth/:provider
+```
+
+**Example:**
+
+```html
+<a href="/oauth/google">Login with Google</a>
+```
+
+### 2. Provider Callback
+
+After user authorizes, provider redirects to:
+
+```
+GET /oauth/:provider/callback
+```
+
+### 3. Client Receives Token
+
+Client is redirected to the configured redirect URL with the access token:
+
+```
+http://localhost:3000/#access_token=<jwt>
+```
+
+Or with an error:
+
+```
+http://localhost:3000/#error=<error_message>
+```
+
+## Account Linking
+
+Link an OAuth account to an existing authenticated user:
+
+```typescript
+// Client-side: Pass JWT token as query parameter
+window.location.href = `/oauth/google?feathers_token=${existingJWT}`
+```
+
+The OAuth strategy will:
+1. Authenticate the existing token
+2. Get the current user
+3. Update the user with OAuth provider information
+4. Return a new JWT
+
+## Client Usage
+
+### Browser
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import rest from '@feathersjs/rest-client'
+import authClient from '@feathersjs/authentication-client'
+
+const app = feathers()
+app.configure(rest('http://localhost:3030').fetch(window.fetch))
+app.configure(authClient())
+
+// Redirect to OAuth provider
+const loginWithGoogle = () => {
+  window.location.href = 'http://localhost:3030/oauth/google'
+}
+
+// Handle OAuth callback (on your redirect page)
+app.reAuthenticate()
+  .then(result => {
+    console.log('Authenticated via OAuth', result.user)
+  })
+  .catch(error => {
+    console.error('OAuth authentication failed', error)
+  })
+
+// Link OAuth account to existing user
+const linkGoogleAccount = async () => {
+  const token = await app.authentication.getAccessToken()
+  window.location.href = `http://localhost:3030/oauth/google?feathers_token=${token}`
+}
+```
+
+### React Example
+
+```typescript
+import React, { useEffect, useState } from 'react'
+import app from './feathers-client'
+
+function OAuth() {
+  const [user, setUser] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    // Handle OAuth callback
+    app.reAuthenticate()
+      .then(result => setUser(result.user))
+      .catch(err => setError(err.message))
+  }, [])
+
+  const handleGoogleLogin = () => {
+    window.location.href = 'http://localhost:3030/oauth/google'
+  }
+
+  const handleGitHubLogin = () => {
+    window.location.href = 'http://localhost:3030/oauth/github'
+  }
+
+  if (error) {
+    return <div>Error: {error}</div>
+  }
+
+  if (user) {
+    return <div>Welcome, {user.name}!</div>
+  }
+
+  return (
+    <div>
+      <button onClick={handleGoogleLogin}>
+        Login with Google
+      </button>
+      <button onClick={handleGitHubLogin}>
+        Login with GitHub
+      </button>
+    </div>
+  )
+}
+```
+
+## Custom Redirect Pages
+
+Customize the redirect with query parameters:
+
+```typescript
+// Redirect to specific page after login
+window.location.href = '/oauth/google?redirect=/dashboard'
+
+// Custom OAuth strategy to handle custom redirects
+class GoogleStrategy extends OAuthStrategy {
+  async getRedirect(data, params) {
+    const customPath = params.query?.redirect || ''
+    const origin = await this.getAllowedOrigin(params)
+    
+    if (data.accessToken) {
+      return `${origin}${customPath}#access_token=${data.accessToken}`
+    }
+    
+    return `${origin}${customPath}#error=${data.message}`
+  }
+}
+```
+
+## Complete Server Example
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import express from '@feathersjs/express'
+import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+import { oauth, OAuthStrategy } from '@feathersjs/authentication-oauth'
+
+const app = express(feathers())
+
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
+app.configure(express.rest())
+
+// Configure authentication
+app.set('authentication', {
+  secret: 'your-secret-key',
+  authStrategies: ['jwt', 'google', 'github'],
+  service: 'users',
+  entity: 'user',
+  oauth: {
+    redirect: 'http://localhost:3000',
+    origins: ['http://localhost:3000'],
+    google: {
+      key: process.env.GOOGLE_CLIENT_ID,
+      secret: process.env.GOOGLE_CLIENT_SECRET,
+      scope: ['email', 'profile']
+    },
+    github: {
+      key: process.env.GITHUB_CLIENT_ID,
+      secret: process.env.GITHUB_CLIENT_SECRET,
+      scope: ['user']
+    }
+  }
+})
+
+// Custom Google strategy
+class GoogleStrategy extends OAuthStrategy {
+  async getEntityData(profile, existingEntity, params) {
+    return {
+      googleId: profile.sub,
+      email: profile.email,
+      name: profile.name,
+      picture: profile.picture,
+      emailVerified: profile.email_verified
+    }
+  }
+}
+
+// Custom GitHub strategy
+class GitHubStrategy extends OAuthStrategy {
+  async getEntityData(profile, existingEntity, params) {
+    return {
+      githubId: profile.id,
+      email: profile.email,
+      username: profile.login,
+      name: profile.name,
+      avatar: profile.avatar_url
+    }
+  }
+}
+
+// Setup users service
+app.use('users', {
+  async find(params) {
+    return []
+  },
+  async get(id, params) {
+    // Get user logic
+    return { id }
+  },
+  async create(data, params) {
+    // Create user logic
+    return { id: 1, ...data }
+  },
+  async patch(id, data, params) {
+    // Update user logic
+    return { id, ...data }
+  }
+})
+
+// Setup authentication
+const authService = new AuthenticationService(app)
+authService.register('jwt', new JWTStrategy())
+authService.register('google', new GoogleStrategy())
+authService.register('github', new GitHubStrategy())
+
+app.use('authentication', authService)
+
+// Configure OAuth
+app.configure(oauth())
+
+app.listen(3030)
+```
+
+## Security
+
+### Origin Validation
+
+OAuth redirects are validated against the `origins` array to prevent open redirect vulnerabilities:
+
+```typescript
+{
+  "oauth": {
+    "origins": [
+      "http://localhost:3000",
+      "https://app.yourdomain.com",
+      "https://staging.yourdomain.com"
+    ]
+  }
+}
+```
+
+### Redirect Path Validation
+
+Redirect paths are validated to prevent URL authority injection. Paths containing `@`, `\\`, or `//` are rejected.
+
+### State Management
+
+OAuth state is managed securely using sessions with CSRF protection.
+
+## Supported Providers
+
+The package supports any OAuth 2.0 provider through the [Grant](https://github.com/simov/grant) library. Common providers include:
+
+- Google
+- GitHub
+- Facebook
+- Twitter
+- LinkedIn
+- Microsoft
+- Auth0
+- And 200+ more
+
+See the [Grant documentation](https://github.com/simov/grant) for the complete list and provider-specific configuration.

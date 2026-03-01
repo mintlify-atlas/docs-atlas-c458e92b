@@ -1,80 +1,511 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: 'Quick Start'
+description: 'Get your first Feathers application up and running in minutes'
 ---
 
-## Get started in three steps
+## Create Your First App
 
-Get your documentation site running locally and make your first customization.
+Let's build a real-time REST API in just a few minutes. We'll create a messages service that automatically works via REST and WebSockets.
 
-### Step 1: Set up your local environment
+<Steps>
+  <Step title="Create a new Feathers application">
+    Use the Feathers CLI to scaffold a new application:
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    <CodeGroup>
 
-### Step 2: Deploy your changes
+    ```bash npm
+    npm create feathers my-app
+    cd my-app
+    ```
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash yarn
+    yarn create feathers my-app
+    cd my-app
+    ```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```bash pnpm
+    pnpm create feathers my-app
+    cd my-app
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    </CodeGroup>
 
-### Step 3: Go live
+    The CLI will ask you some questions about your project setup:
+    - Choose TypeScript or JavaScript
+    - Select your preferred database (we'll use Memory for this quick start)
+    - Choose Express or Koa
+    - Select authentication options
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    <Tip>
+      For your first app, select **Memory** database and **Express** as the framework. You can always change these later.
+    </Tip>
+  </Step>
 
-## Next steps
+  <Step title="Start the development server">
+    Run the development server:
 
-Now that you have your docs running, explore these key features:
+    ```bash
+    npm run dev
+    ```
+
+    Your Feathers API is now running at `http://localhost:3030`!
+
+    <Check>
+      You should see output indicating the server started successfully. The app automatically restarts when you make changes.
+    </Check>
+  </Step>
+
+  <Step title="Create your first service">
+    Let's create a simple in-memory service manually to understand the core concepts:
+
+    ```typescript app.ts
+    import { feathers } from '@feathersjs/feathers'
+    import express, { rest, json, errorHandler, notFound } from '@feathersjs/express'
+    import { memory } from '@feathersjs/memory'
+
+    // Create an Express compatible Feathers application
+    const app = express(feathers())
+
+    // Parse JSON and form data
+    app.use(json())
+
+    // Configure REST API
+    app.configure(rest())
+
+    // Create a messages service
+    app.use('messages', memory({
+      id: 'id',
+      startId: 1,
+      paginate: {
+        default: 10,
+        max: 50
+      }
+    }))
+
+    // Error handling
+    app.use(notFound())
+    app.use(errorHandler())
+
+    // Start the server
+    await app.listen(3030)
+    console.log('Feathers app started on http://localhost:3030')
+    ```
+
+    This creates a fully functional REST API with the following endpoints:
+
+    ```bash
+    GET    /messages        # Find all messages
+    GET    /messages/:id    # Get a message by ID
+    POST   /messages        # Create a new message
+    PUT    /messages/:id    # Update a message
+    PATCH  /messages/:id    # Patch a message
+    DELETE /messages/:id    # Remove a message
+    ```
+  </Step>
+
+  <Step title="Test your API">
+    Test the API with curl or any HTTP client:
+
+    <CodeGroup>
+
+    ```bash Create a message
+    curl -X POST http://localhost:3030/messages \
+      -H "Content-Type: application/json" \
+      -d '{"text": "Hello Feathers!"}'
+    ```
+
+    ```bash Get all messages
+    curl http://localhost:3030/messages
+    ```
+
+    ```bash Get a specific message
+    curl http://localhost:3030/messages/1
+    ```
+
+    ```bash Update a message
+    curl -X PATCH http://localhost:3030/messages/1 \
+      -H "Content-Type: application/json" \
+      -d '{"text": "Updated message"}'
+    ```
+
+    </CodeGroup>
+
+    <Note>
+      The memory adapter automatically handles ID generation, validation, and pagination for you.
+    </Note>
+  </Step>
+</Steps>
+
+## Understanding the Core Concepts
+
+### Services
+
+Services are the heart of Feathers. They're objects that implement specific methods for interacting with data:
+
+```typescript packages/feathers/src/service.ts
+export const defaultServiceMethods = ['find', 'get', 'create', 'update', 'patch', 'remove']
+
+export const defaultServiceArguments = {
+  find: ['params'],
+  get: ['id', 'params'],
+  create: ['data', 'params'],
+  update: ['id', 'data', 'params'],
+  patch: ['id', 'data', 'params'],
+  remove: ['id', 'params']
+}
+```
+
+You can also create a custom service:
+
+```typescript Custom Service
+class MessageService {
+  async find(params) {
+    return {
+      data: [{ id: 1, text: 'Hello' }],
+      total: 1,
+      limit: 10,
+      skip: 0
+    }
+  }
+
+  async get(id, params) {
+    return { id, text: 'A message' }
+  }
+
+  async create(data, params) {
+    return {
+      id: Math.random(),
+      ...data
+    }
+  }
+
+  async update(id, data, params) {
+    return { id, ...data }
+  }
+
+  async patch(id, data, params) {
+    return { id, ...data }
+  }
+
+  async remove(id, params) {
+    return { id }
+  }
+}
+
+app.use('messages', new MessageService())
+```
+
+### The Feathers Application
+
+The Feathers application is created using the `feathers()` function:
+
+```typescript packages/feathers/src/application.ts
+export class Feathers<Services, Settings>
+  extends EventEmitter
+  implements FeathersApplication<Services, Settings>
+{
+  services: Services = {} as Services
+  settings: Settings = {} as Settings
+  mixins: ServiceMixin<Application<Services, Settings>>[] = [hookMixin, eventMixin]
+  version: string = version
+  _isSetup = false
+
+  use<L extends keyof Services & string>(
+    path: L,
+    service: ServiceInterface,
+    options?: ServiceOptions
+  ): this {
+    const location = (stripSlashes(path) || '/') as L
+    // Register the service...
+    this.services[location] = protoService
+    return this
+  }
+
+  service<L extends keyof Services & string>(location: L) {
+    const path = (stripSlashes(location) || '/') as L
+    return this.services[path]
+  }
+}
+```
+
+Key methods:
+
+- `app.use(path, service)` - Register a service
+- `app.service(path)` - Get a registered service
+- `app.configure(callback)` - Configure the application
+- `app.listen(port)` - Start the server
+
+### Adding Real-time with Socket.io
+
+Add Socket.io support to enable real-time communication:
+
+```typescript Real-time
+import { feathers } from '@feathersjs/feathers'
+import express, { rest } from '@feathersjs/express'
+import socketio from '@feathersjs/socketio'
+import { memory } from '@feathersjs/memory'
+
+const app = express(feathers())
+
+// Configure transports
+app.configure(rest())
+app.configure(socketio())
+
+// Register service
+app.use('messages', memory())
+
+// Clients can now connect via Socket.io
+await app.listen(3030)
+```
+
+The Socket.io configuration from the source:
+
+```typescript packages/socketio/src/index.ts
+function configureSocketio(
+  port?: any, 
+  options?: any, 
+  config?: any
+) {
+  return (app: Application) => {
+    const done = new Promise((resolve) => {
+      app.setup = async function(server: http.Server) {
+        if (!this.io) {
+          const io = (this.io = new Server(port || server, options))
+
+          io.use(disconnect(app, getParams, socketMap))
+          io.use(params(app, socketMap))
+          io.use(authentication(app, getParams))
+
+          // Set higher event listener limit
+          io.sockets.setMaxListeners(64)
+        }
+
+        resolve(this.io)
+        return setup.call(this, server)
+      }
+    })
+
+    app.configure(
+      socket({
+        done,
+        socketMap,
+        getParams,
+        emit: 'emit'
+      })
+    )
+  }
+}
+```
+
+Clients automatically receive events:
+
+```javascript Client
+const socket = io('http://localhost:3030')
+
+// Listen for new messages
+socket.on('messages created', (message) => {
+  console.log('New message:', message)
+})
+
+// Listen for updates
+socket.on('messages patched', (message) => {
+  console.log('Message updated:', message)
+})
+```
+
+## Adding Hooks
+
+Hooks are middleware for services. They run before, after, or around service methods:
+
+```typescript Hooks Example
+app.service('messages').hooks({
+  before: {
+    create: [
+      async (context) => {
+        // Validate and modify data before creating
+        context.data.createdAt = new Date()
+        context.data.userId = context.params.user?.id
+      }
+    ],
+    all: [
+      async (context) => {
+        // This runs for all methods
+        console.log(`${context.method} on ${context.path}`)
+      }
+    ]
+  },
+  after: {
+    all: [
+      async (context) => {
+        // Modify the result after the method runs
+        console.log('Result:', context.result)
+      }
+    ]
+  },
+  error: {
+    all: [
+      async (context) => {
+        // Handle errors
+        console.error('Error:', context.error)
+      }
+    ]
+  }
+})
+```
+
+Hooks implementation from the source:
+
+```typescript packages/feathers/src/hooks.ts
+export function enableHooks(object: any) {
+  const store: HookStore = {
+    around: {},
+    before: {},
+    after: {},
+    error: {},
+    collected: {},
+    collectedAll: {}
+  }
+
+  return function registerHooks(input: HookMap<any, any>) {
+    const store = this.__hooks
+    const map = Object.keys(input).reduce((map, type) => {
+      if (!isType(type)) {
+        throw new Error(`'${type}' is not a valid hook type`)
+      }
+      map[type] = convertHookData(input[type])
+      return map
+    }, {} as ConvertedMap)
+    // ... register hooks
+  }
+}
+```
+
+## Using Express Middleware
+
+Since Feathers extends Express, you can use any Express middleware:
+
+```typescript Express Integration
+import { feathers } from '@feathersjs/feathers'
+import express, { 
+  rest, 
+  json, 
+  urlencoded, 
+  cors, 
+  compression,
+  errorHandler, 
+  notFound 
+} from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Use Express middleware
+app.use(cors())
+app.use(compression())
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Configure REST
+app.configure(rest())
+
+// Add services
+app.use('messages', memory())
+
+// Add custom Express routes
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' })
+})
+
+// Error handling (must be last)
+app.use(notFound())
+app.use(errorHandler())
+
+await app.listen(3030)
+```
+
+## Query Syntax
+
+Feathers supports a rich query syntax for filtering data:
+
+```typescript Query Examples
+// Find all messages
+await app.service('messages').find()
+
+// Pagination
+await app.service('messages').find({
+  query: {
+    $limit: 10,
+    $skip: 20
+  }
+})
+
+// Filtering
+await app.service('messages').find({
+  query: {
+    userId: 123,
+    read: false
+  }
+})
+
+// Sorting
+await app.service('messages').find({
+  query: {
+    $sort: {
+      createdAt: -1
+    }
+  }
+})
+
+// Selecting fields
+await app.service('messages').find({
+  query: {
+    $select: ['text', 'createdAt']
+  }
+})
+
+// Complex queries
+await app.service('messages').find({
+  query: {
+    createdAt: {
+      $gte: new Date('2024-01-01'),
+      $lt: new Date('2024-12-31')
+    }
+  }
+})
+```
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="Complete Tutorial"
+    icon="graduation-cap"
+    href="/tutorial"
+  >
+    Build a full chat application with authentication
+  </Card>
+  <Card
+    title="Authentication"
+    icon="lock"
+    href="#"
+  >
+    Add JWT authentication to your app
+  </Card>
+  <Card
+    title="Database Adapters"
+    icon="database"
+    href="#"
+  >
+    Connect to MongoDB, PostgreSQL, or other databases
+  </Card>
+  <Card
+    title="Deployment"
+    icon="rocket"
+    href="#"
+  >
+    Deploy your Feathers app to production
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+<Tip>
+  Check out the [complete example on GitHub](https://github.com/feathersjs/feathers) for more real-world implementations.
+</Tip>

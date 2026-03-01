@@ -1,0 +1,316 @@
+---
+title: Koa Transport
+description: API reference for @feathersjs/koa transport including REST provider and Koa framework bindings
+---
+
+# Koa Transport
+
+The `@feathersjs/koa` module provides Koa framework bindings and a REST API provider for Feathers applications.
+
+## Installation
+
+```bash
+npm install @feathersjs/koa koa
+```
+
+## koa()
+
+Creates a Feathers application that extends a Koa app with Feathers functionality.
+
+### Signature
+
+```typescript
+function koa<S = any, C = any>(
+  feathersApp?: FeathersApplication<S, C>,
+  koaApp?: Koa
+): Application<S, C>
+```
+
+<ParamField path="feathersApp" type="FeathersApplication" optional>
+  A Feathers application instance to extend with Koa functionality
+</ParamField>
+
+<ParamField path="koaApp" type="Koa" optional>
+  A Koa application instance (defaults to `new Koa()`)
+</ParamField>
+
+### Returns
+
+<ResponseField name="Application" type="Application<S, C>">
+  Combined Koa and Feathers application with extended functionality including:
+  - All Koa app methods and middleware
+  - All Feathers service and hook capabilities
+  - Enhanced `listen()` method that calls Feathers `setup()`
+  - Enhanced `use()` method that handles both Koa middleware and Feathers services
+</ResponseField>
+
+### Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import { koa, rest, bodyParser } from '@feathersjs/koa'
+
+const app = koa(feathers())
+
+// Koa middleware
+app.use(bodyParser())
+
+// Feathers REST transport
+app.configure(rest())
+
+// Register services
+app.use('/messages', messageService)
+
+// Start server
+app.listen(3030)
+```
+
+## rest()
+
+Configures the REST transport provider for Feathers services.
+
+### Signature
+
+```typescript
+function rest(options?: RestOptions | Middleware): (app: Application) => void
+```
+
+<ParamField path="options" type="RestOptions | Middleware" optional>
+  REST configuration options or a custom formatter middleware
+</ParamField>
+
+### RestOptions
+
+<ParamField path="formatter" type="Middleware" optional>
+  Custom response formatter middleware
+</ParamField>
+
+<ParamField path="authentication" type="AuthenticationSettings" optional>
+  Authentication configuration for parsing credentials from HTTP requests
+</ParamField>
+
+### Example
+
+```typescript
+import { koa, rest } from '@feathersjs/koa'
+
+const app = koa(feathers())
+
+// Use default REST provider
+app.configure(rest())
+
+// With custom formatter
+app.configure(rest(async (ctx, next) => {
+  await next()
+  // Custom formatting logic
+}))
+
+// With authentication options
+app.configure(rest({
+  authentication: {
+    service: 'authentication',
+    strategies: ['jwt', 'local']
+  }
+}))
+```
+
+## parseAuthentication()
+
+Middleware that parses authentication credentials from HTTP headers.
+
+### Signature
+
+```typescript
+function parseAuthentication(settings?: AuthenticationSettings): Middleware
+```
+
+<ParamField path="settings" type="AuthenticationSettings" optional>
+  Authentication parsing configuration
+</ParamField>
+
+### AuthenticationSettings
+
+<ParamField path="service" type="string" optional>
+  Name of the authentication service
+</ParamField>
+
+<ParamField path="strategies" type="string[]" optional>
+  Array of authentication strategy names to parse
+</ParamField>
+
+### Example
+
+```typescript
+import { koa, parseAuthentication } from '@feathersjs/koa'
+
+const app = koa(feathers())
+
+// Automatically parse authentication from headers
+app.use(parseAuthentication({
+  strategies: ['jwt', 'api-key']
+}))
+```
+
+## authenticate()
+
+Koa middleware for authenticating requests.
+
+### Signature
+
+```typescript
+function authenticate(
+  settings: string | AuthenticationSettings,
+  ...strategies: string[]
+): Middleware
+```
+
+<ParamField path="settings" type="string | AuthenticationSettings">
+  Authentication service name or settings object
+</ParamField>
+
+<ParamField path="strategies" type="string[]" optional>
+  Authentication strategies to use
+</ParamField>
+
+### Example
+
+```typescript
+import { koa, authenticate } from '@feathersjs/koa'
+
+const app = koa(feathers())
+
+// Protect specific routes
+app.use(authenticate('jwt'))
+
+// Protect a service with specific strategies
+app.use('/messages', authenticate('jwt'), messageService)
+```
+
+## Exported Koa Utilities
+
+The module exports commonly used Koa utilities:
+
+```typescript
+import {
+  Koa,            // Koa class
+  bodyParser,     // koa-body parser (koaBody)
+  cors,           // @koa/cors middleware
+  serveStatic     // koa-static for serving files
+} from '@feathersjs/koa'
+```
+
+### bodyParser Options
+
+```typescript
+app.use(bodyParser({
+  multipart: true,
+  urlencoded: true,
+  json: true
+}))
+```
+
+### CORS Configuration
+
+```typescript
+import { cors } from '@feathersjs/koa'
+
+app.use(cors({
+  origin: '*',
+  credentials: true
+}))
+```
+
+### Static File Serving
+
+```typescript
+import { serveStatic } from '@feathersjs/koa'
+
+app.use(serveStatic('public'))
+```
+
+## Service Options
+
+Koa-specific service options can be configured when registering services:
+
+```typescript
+app.use('/messages', messageService, {
+  koa: {
+    before: [/* middleware before service */],
+    after: [/* middleware after service */]
+  }
+})
+```
+
+<ParamField path="koa.before" type="Middleware[]" optional>
+  Middleware to run before the service handler
+</ParamField>
+
+<ParamField path="koa.after" type="Middleware[]" optional>
+  Middleware to run after the service handler
+</ParamField>
+
+## Context Extensions
+
+The Koa context object is extended with Feathers-specific properties:
+
+<ResponseField name="ctx.feathers" type="Params">
+  Feathers params object containing provider, headers, and other metadata
+</ResponseField>
+
+<ResponseField name="ctx.lookup" type="RouteLookup">
+  Service route lookup information
+</ResponseField>
+
+<ResponseField name="ctx.hook" type="HookContext">
+  The hook context from the service call
+</ResponseField>
+
+## Middleware Type
+
+Koa middleware in Feathers uses the following type signature:
+
+```typescript
+type Middleware<A = Application> = (
+  context: FeathersKoaContext<A>,
+  next: Next
+) => any
+
+type FeathersKoaContext<A = Application> = Koa.Context & {
+  app: A
+}
+```
+
+## Complete Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import { koa, rest, bodyParser, cors, serveStatic } from '@feathersjs/koa'
+
+const app = koa(feathers())
+
+// Middleware
+app.use(cors())
+app.use(serveStatic('public'))
+app.use(bodyParser({
+  multipart: true
+}))
+
+// Configure REST transport
+app.configure(rest())
+
+// Register services
+app.use('/messages', messageService, {
+  koa: {
+    before: [
+      async (ctx, next) => {
+        console.log('Before service call')
+        await next()
+      }
+    ]
+  }
+})
+
+// Start server
+const server = await app.listen(3030)
+console.log('Feathers Koa app listening on port 3030')
+```

@@ -1,0 +1,545 @@
+---
+title: MongoDB Adapter
+description: Use the Feathers MongoDB adapter to connect your application to MongoDB databases with full support for aggregation pipelines, transactions, and native MongoDB features.
+---
+
+The `@feathersjs/mongodb` adapter provides native MongoDB integration for Feathers services, supporting all MongoDB features including aggregation pipelines, GridFS, and transactions.
+
+## Installation
+
+<Steps>
+  <Step title="Install dependencies">
+    Install the MongoDB adapter and the MongoDB driver:
+
+    ```bash
+    npm install @feathersjs/mongodb mongodb
+    ```
+  </Step>
+
+  <Step title="Connect to MongoDB">
+    Create a MongoDB connection:
+
+    ```typescript
+    import { MongoClient } from 'mongodb'
+
+    const client = new MongoClient('mongodb://localhost:27017/mydb')
+    await client.connect()
+    
+    const db = client.db()
+    ```
+  </Step>
+
+  <Step title="Create a service">
+    Create a service using the MongoDB adapter:
+
+    ```typescript
+    import { MongoDBService } from '@feathersjs/mongodb'
+
+    class UserService extends MongoDBService {
+      // Custom methods here
+    }
+
+    app.use('users', new UserService({
+      Model: db.collection('users'),
+      paginate: {
+        default: 10,
+        max: 50
+      }
+    }))
+    ```
+  </Step>
+</Steps>
+
+## Configuration
+
+### Service Options
+
+The MongoDB adapter accepts these options:
+
+```typescript
+interface MongoDBAdapterOptions {
+  Model: Collection | Promise<Collection>  // MongoDB collection
+  id?: string                              // Primary key field (default: '_id')
+  disableObjectify?: boolean               // Don't convert IDs to ObjectId
+  useEstimatedDocumentCount?: boolean      // Use estimated count for performance
+  paginate?: PaginationOptions             // Pagination settings
+  multi?: boolean | string[]               // Allow multi operations
+  events?: string[]                        // Custom events
+}
+```
+
+### Example Configuration
+
+<CodeGroup>
+```typescript Basic
+import { MongoDBService } from '@feathersjs/mongodb'
+
+app.use('messages', new MongoDBService({
+  Model: db.collection('messages')
+}))
+```
+
+```typescript With Options
+import { MongoDBService } from '@feathersjs/mongodb'
+
+app.use('users', new MongoDBService({
+  Model: db.collection('users'),
+  id: '_id',
+  paginate: {
+    default: 20,
+    max: 100
+  },
+  multi: ['remove'],
+  events: ['user-verified']
+}))
+```
+
+```typescript Custom Class
+import { MongoDBService } from '@feathersjs/mongodb'
+import type { Params, Id } from '@feathersjs/feathers'
+
+interface User {
+  _id: ObjectId
+  email: string
+  name: string
+  createdAt: Date
+}
+
+class UserService extends MongoDBService<User> {
+  async create(data: Partial<User>, params?: Params) {
+    const userData = {
+      ...data,
+      createdAt: new Date()
+    }
+    return super.create(userData, params)
+  }
+}
+
+app.use('users', new UserService({
+  Model: db.collection('users')
+}))
+```
+</CodeGroup>
+
+## Querying
+
+### Basic Queries
+
+The MongoDB adapter supports all standard Feathers query operators:
+
+<CodeGroup>
+```typescript Find
+// Find all users
+const users = await app.service('users').find({
+  query: {}
+})
+
+// Find with filters
+const activeUsers = await app.service('users').find({
+  query: {
+    status: 'active',
+    age: { $gte: 18 }
+  }
+})
+```
+
+```typescript Get
+// Get by ObjectId
+const user = await app.service('users').get('507f1f77bcf86cd799439011')
+
+// Get with query constraints
+const user = await app.service('users').get(userId, {
+  query: {
+    status: 'active'
+  }
+})
+```
+
+```typescript Complex Queries
+// Logical operators
+const results = await app.service('users').find({
+  query: {
+    $or: [
+      { role: 'admin' },
+      { $and: [{ verified: true }, { age: { $gte: 21 } }] }
+    ]
+  }
+})
+
+// Array operations
+const users = await app.service('users').find({
+  query: {
+    roles: { $in: ['admin', 'moderator'] },
+    tags: { $nin: ['banned', 'deleted'] }
+  }
+})
+```
+
+```typescript Sorting & Pagination
+const results = await app.service('users').find({
+  query: {
+    status: 'active',
+    $sort: { createdAt: -1 },
+    $limit: 20,
+    $skip: 0,
+    $select: ['name', 'email', 'createdAt']
+  }
+})
+```
+</CodeGroup>
+
+### MongoDB-Specific Options
+
+Pass native MongoDB options through `params.mongodb`:
+
+```typescript
+// Find with MongoDB options
+const users = await app.service('users').find({
+  query: { status: 'active' },
+  mongodb: {
+    hint: { status: 1 },
+    maxTimeMS: 5000,
+    readPreference: 'secondary'
+  }
+})
+
+// Create with write concern
+const user = await app.service('users').create(
+  { name: 'John', email: 'john@example.com' },
+  {
+    mongodb: {
+      writeConcern: { w: 'majority', wtimeout: 5000 }
+    }
+  }
+)
+```
+
+## Aggregation Pipelines
+
+Use MongoDB's powerful aggregation framework with the `pipeline` parameter:
+
+<CodeGroup>
+```typescript Basic Pipeline
+// Use aggregation pipeline
+const results = await app.service('orders').find({
+  pipeline: [
+    { $match: { status: 'completed' } },
+    {
+      $group: {
+        _id: '$customerId',
+        totalSpent: { $sum: '$amount' },
+        orderCount: { $sum: 1 }
+      }
+    },
+    { $sort: { totalSpent: -1 } },
+    { $limit: 10 }
+  ]
+})
+```
+
+```typescript With Feathers Filters
+// Combine pipeline with Feathers filters
+// Use $feathers placeholder for where Feathers filters apply
+const results = await app.service('users').find({
+  query: {
+    status: 'active',
+    $limit: 20
+  },
+  pipeline: [
+    { $match: { verified: true } },
+    { $feathers: true },  // Feathers filters applied here
+    {
+      $lookup: {
+        from: 'posts',
+        localField: '_id',
+        foreignField: 'userId',
+        as: 'posts'
+      }
+    },
+    { $addFields: { postCount: { $size: '$posts' } } }
+  ]
+})
+```
+
+```typescript Lookup Join
+// Join with another collection
+const usersWithOrders = await app.service('users').find({
+  pipeline: [
+    {
+      $lookup: {
+        from: 'orders',
+        localField: '_id',
+        foreignField: 'userId',
+        as: 'orders'
+      }
+    },
+    {
+      $addFields: {
+        orderCount: { $size: '$orders' },
+        totalSpent: { $sum: '$orders.amount' }
+      }
+    },
+    { $match: { orderCount: { $gt: 0 } } }
+  ]
+})
+```
+</CodeGroup>
+
+## Data Manipulation
+
+### Create
+
+<CodeGroup>
+```typescript Single Document
+const user = await app.service('users').create({
+  name: 'Alice',
+  email: 'alice@example.com',
+  age: 25
+})
+```
+
+```typescript Multiple Documents
+const users = await app.service('users').create([
+  { name: 'Alice', email: 'alice@example.com' },
+  { name: 'Bob', email: 'bob@example.com' }
+])
+```
+
+```typescript With Custom ID
+// When not using default _id
+const post = await app.service('posts').create({
+  id: 'custom-slug',
+  title: 'Hello World',
+  content: 'Post content'
+})
+```
+</CodeGroup>
+
+### Update
+
+```typescript
+// Replace entire document (except _id)
+const updated = await app.service('users').update(
+  '507f1f77bcf86cd799439011',
+  {
+    name: 'Alice Updated',
+    email: 'alice.new@example.com',
+    age: 26
+  }
+)
+```
+
+### Patch
+
+<CodeGroup>
+```typescript Single Document
+// Partial update
+const patched = await app.service('users').patch(
+  '507f1f77bcf86cd799439011',
+  { status: 'verified' }
+)
+```
+
+```typescript Multiple Documents
+// Enable multi first
+app.use('users', new MongoDBService({
+  Model: db.collection('users'),
+  multi: ['patch']
+}))
+
+// Patch multiple
+const results = await app.service('users').patch(
+  null,
+  { verified: true },
+  {
+    query: { email: { $ne: null } }
+  }
+)
+```
+
+```typescript MongoDB Operators
+// Use MongoDB update operators
+const updated = await app.service('users').patch(
+  userId,
+  {
+    $inc: { loginCount: 1 },
+    $set: { lastLogin: new Date() },
+    $push: { loginHistory: new Date() }
+  }
+)
+```
+</CodeGroup>
+
+### Remove
+
+<CodeGroup>
+```typescript Single Document
+const removed = await app.service('users').remove(
+  '507f1f77bcf86cd799439011'
+)
+```
+
+```typescript Multiple Documents
+// Enable multi operations
+app.use('users', new MongoDBService({
+  Model: db.collection('users'),
+  multi: ['remove']
+}))
+
+// Remove multiple
+const removed = await app.service('users').remove(null, {
+  query: { status: 'deleted' }
+})
+```
+</CodeGroup>
+
+## ObjectId Handling
+
+The adapter automatically handles ObjectId conversion:
+
+```typescript
+import { ObjectId } from 'mongodb'
+
+// These all work the same
+await app.service('users').get('507f1f77bcf86cd799439011')
+await app.service('users').get(new ObjectId('507f1f77bcf86cd799439011'))
+
+// Query by ObjectId
+const users = await app.service('users').find({
+  query: {
+    _id: { $in: [
+      '507f1f77bcf86cd799439011',
+      '507f1f77bcf86cd799439012'
+    ]}
+  }
+})
+
+// Disable automatic ObjectId conversion
+app.use('users', new MongoDBService({
+  Model: db.collection('users'),
+  disableObjectify: true  // Keep IDs as strings
+}))
+```
+
+## Performance Optimization
+
+### Estimated Document Count
+
+For large collections, use estimated count for better performance:
+
+```typescript
+app.use('logs', new MongoDBService({
+  Model: db.collection('logs'),
+  useEstimatedDocumentCount: true,
+  paginate: { default: 50, max: 100 }
+}))
+
+// Pagination will use estimatedDocumentCount()
+// instead of countDocuments() - much faster but approximate
+const logs = await app.service('logs').find({
+  query: { $limit: 50 }
+})
+```
+
+### Field Projection
+
+```typescript
+// Only select needed fields
+const users = await app.service('users').find({
+  query: {
+    $select: ['name', 'email']  // Exclude large fields
+  }
+})
+```
+
+### Indexes
+
+Create indexes on your collections:
+
+```typescript
+// Create indexes for better query performance
+await db.collection('users').createIndex({ email: 1 }, { unique: true })
+await db.collection('users').createIndex({ status: 1, createdAt: -1 })
+await db.collection('posts').createIndex({ userId: 1, publishedAt: -1 })
+```
+
+## Type Safety
+
+Full TypeScript support with generics:
+
+```typescript
+import { ObjectId } from 'mongodb'
+import { MongoDBService, MongoDBAdapterParams } from '@feathersjs/mongodb'
+import type { Params } from '@feathersjs/feathers'
+
+interface User {
+  _id: ObjectId
+  email: string
+  name: string
+  age: number
+  roles: string[]
+  createdAt: Date
+}
+
+interface UserData {
+  email: string
+  name: string
+  age: number
+  roles?: string[]
+}
+
+interface UserParams extends MongoDBAdapterParams {
+  user?: User
+}
+
+class UserService extends MongoDBService<User, UserData, UserParams> {
+  async find(params?: UserParams) {
+    // Fully typed
+    return super.find(params)
+  }
+}
+
+app.use('users', new UserService({
+  Model: db.collection<User>('users')
+}))
+
+// Type-safe usage
+const users: User[] = await app.service('users').find()
+const user: User = await app.service('users').get(userId)
+```
+
+## Error Handling
+
+The adapter provides specific error handling:
+
+```typescript
+import { errorHandler } from '@feathersjs/mongodb'
+
+try {
+  await app.service('users').create({
+    email: 'duplicate@example.com'
+  })
+} catch (error) {
+  // MongoDB errors are converted to Feathers errors
+  // Duplicate key -> Conflict (409)
+  // Invalid operation -> BadRequest (400)
+  // Not found -> NotFound (404)
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Knex Adapter" icon="database" href="/guides/databases/knex">
+    Learn about the SQL adapter
+  </Card>
+  <Card title="Common Patterns" icon="code" href="/guides/databases/adapters">
+    Explore adapter patterns
+  </Card>
+  <Card title="Hooks" icon="hook" href="/guides/basics/hooks">
+    Add hooks to your services
+  </Card>
+  <Card title="Validation" icon="shield" href="/guides/basics/schemas">
+    Validate your data with schemas
+  </Card>
+</CardGroup>

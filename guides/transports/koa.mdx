@@ -1,0 +1,580 @@
+---
+title: Koa Integration
+description: Integrate Feathers with Koa framework for modern async/await HTTP APIs
+---
+
+The `@feathersjs/koa` package provides integration between Feathers and Koa, bringing async/await middleware patterns and lightweight HTTP handling to your Feathers services.
+
+## Installation
+
+```bash
+npm install @feathersjs/koa koa
+```
+
+## Basic Setup
+
+<Steps>
+  <Step title="Create the Koa application">
+    The Koa integration wraps a Feathers application with Koa functionality:
+
+    ```typescript
+    import { feathers } from '@feathersjs/feathers'
+    import { koa } from '@feathersjs/koa'
+
+    const app = koa(feathers())
+    ```
+  </Step>
+
+  <Step title="Add body parsing middleware">
+    Enable request body parsing for POST/PUT/PATCH requests:
+
+    ```typescript
+    import { bodyParser } from '@feathersjs/koa'
+
+    app.use(bodyParser())
+    ```
+  </Step>
+
+  <Step title="Configure REST transport">
+    Enable the REST transport to expose services via HTTP:
+
+    ```typescript
+    import { rest } from '@feathersjs/koa'
+
+    app.configure(rest())
+    ```
+  </Step>
+
+  <Step title="Register services">
+    Services are automatically exposed as REST endpoints:
+
+    ```typescript
+    app.use('/users', {
+      async find() {
+        return [{ id: 1, name: 'Alice' }]
+      },
+      async get(id) {
+        return { id, name: 'Alice' }
+      }
+    })
+    ```
+  </Step>
+
+  <Step title="Add error handling">
+    Use the error handler middleware to catch and format errors:
+
+    ```typescript
+    import { errorHandler } from '@feathersjs/koa'
+
+    app.use(errorHandler())
+    ```
+  </Step>
+
+  <Step title="Start the server">
+    The `listen` method automatically calls `setup()` on all services:
+
+    ```typescript
+    await app.listen(3030)
+    console.log('Feathers app started on http://localhost:3030')
+    ```
+  </Step>
+</Steps>
+
+## Complete Example
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import { koa, rest, bodyParser, errorHandler, cors } from '@feathersjs/koa'
+
+const app = koa(feathers())
+
+// Middleware must be added before REST configuration
+app.use(errorHandler())
+app.use(cors())
+app.use(bodyParser())
+
+// Configure REST transport
+app.configure(rest())
+
+// Register services
+app.use('/messages', {
+  async find() {
+    return [
+      { id: 1, text: 'Hello world' },
+      { id: 2, text: 'How are you?' }
+    ]
+  },
+  async create(data) {
+    return { id: 3, ...data }
+  }
+})
+
+// Custom Koa middleware
+app.use(async (ctx, next) => {
+  if (ctx.path === '/health') {
+    ctx.body = { status: 'ok' }
+  } else {
+    await next()
+  }
+})
+
+// Start server
+const server = await app.listen(3030)
+console.log('Server ready on http://localhost:3030')
+```
+
+## Service Middleware
+
+Koa middleware can be added before and after service calls using the `koa` option:
+
+```typescript
+import { Middleware } from '@feathersjs/koa'
+
+const logRequest: Middleware = async (ctx, next) => {
+  console.log(`${ctx.method} ${ctx.path}`)
+  await next()
+}
+
+const addTimestamp: Middleware = async (ctx, next) => {
+  await next()
+  ctx.body = { ...ctx.body, timestamp: new Date() }
+}
+
+app.use('/todos', todoService, {
+  koa: {
+    before: [logRequest],
+    after: [addTimestamp]
+  },
+  methods: ['find', 'get', 'create']
+})
+```
+
+### Middleware Patterns
+
+<Tabs>
+  <Tab title="Before Middleware">
+    Middleware in the `before` array runs before the service method:
+
+    ```typescript
+    const validateRequest: Middleware = async (ctx, next) => {
+      if (!ctx.request.headers.authorization) {
+        ctx.throw(401, 'Unauthorized')
+      }
+      await next()
+    }
+
+    app.use('/protected', service, {
+      koa: {
+        before: [validateRequest]
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="After Middleware">
+    Middleware in the `after` array runs after the service method and can modify `ctx.body`:
+
+    ```typescript
+    const formatResponse: Middleware = async (ctx, next) => {
+      await next()
+      ctx.body = {
+        status: 'success',
+        data: ctx.body,
+        timestamp: new Date()
+      }
+    }
+
+    app.use('/api/users', userService, {
+      koa: {
+        after: [formatResponse]
+      }
+    })
+    ```
+  </Tab>
+
+  <Tab title="Combined">
+    Use both before and after middleware together:
+
+    ```typescript
+    app.use('/todos', todoService, {
+      koa: {
+        before: [
+          async (ctx, next) => {
+            ctx.state.startTime = Date.now()
+            await next()
+          }
+        ],
+        after: [
+          async (ctx, next) => {
+            await next()
+            const duration = Date.now() - ctx.state.startTime
+            ctx.set('X-Response-Time', `${duration}ms`)
+          }
+        ]
+      }
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## Context and Feathers Params
+
+Koa's `ctx.feathers` object contains Feathers-specific parameters:
+
+```typescript
+app.use(async (ctx, next) => {
+  // Access Feathers params
+  console.log(ctx.feathers.provider)  // 'rest'
+  console.log(ctx.feathers.headers)   // Request headers
+
+  // Add custom params that services will receive
+  ctx.feathers.customData = { userId: 123 }
+
+  await next()
+})
+
+app.use('/items', {
+  async find(params) {
+    // params includes ctx.feathers properties
+    console.log(params.customData)  // { userId: 123 }
+    console.log(params.provider)     // 'rest'
+    return []
+  }
+})
+```
+
+## Authentication
+
+Integrate Feathers authentication with Koa middleware:
+
+```typescript
+import { authenticate } from '@feathersjs/koa'
+
+// Protect routes with authentication
+app.use('/admin', authenticate('jwt'), adminService)
+
+// Authentication middleware
+const requireAuth: Middleware = authenticate('jwt')
+
+app.use(async (ctx, next) => {
+  if (ctx.path.startsWith('/api/')) {
+    await requireAuth(ctx, next)
+  } else {
+    await next()
+  }
+})
+```
+
+### Authentication Configuration
+
+```typescript
+import { rest, parseAuthentication } from '@feathersjs/koa'
+
+// Configure REST with automatic authentication parsing
+app.configure(rest({
+  authentication: {
+    service: 'authentication',
+    strategies: ['jwt', 'local']
+  }
+}))
+
+// Or add authentication parsing globally
+app.use(parseAuthentication({
+  service: 'authentication',
+  strategies: ['jwt']
+}))
+```
+
+## Error Handling
+
+Koa error handling is done through middleware:
+
+<CodeGroup>
+```typescript Default Handler
+import { errorHandler } from '@feathersjs/koa'
+
+// Use default error handler (must be first middleware)
+app.use(errorHandler())
+app.use(bodyParser())
+app.configure(rest())
+```
+
+```typescript Custom Handler
+app.use(async (ctx, next) => {
+  try {
+    await next()
+
+    if (ctx.body === undefined) {
+      ctx.throw(404, `Path ${ctx.path} not found`)
+    }
+  } catch (error: any) {
+    ctx.status = error.status || 500
+    ctx.body = {
+      error: error.message,
+      code: ctx.status,
+      timestamp: new Date().toISOString()
+    }
+  }
+})
+```
+
+```typescript With Logging
+import { FeathersError } from '@feathersjs/errors'
+
+app.use(async (ctx, next) => {
+  try {
+    await next()
+
+    if (ctx.body === undefined) {
+      ctx.throw(404, 'Not found')
+    }
+  } catch (error: any) {
+    // Log errors
+    if (error.status >= 500) {
+      console.error('Server error:', error)
+    }
+
+    ctx.status = error instanceof FeathersError ? error.code : 500
+    ctx.body = typeof error.toJSON === 'function'
+      ? error.toJSON()
+      : { message: error.message }
+  }
+})
+```
+</CodeGroup>
+
+## Static Files
+
+Serve static files using Koa's static middleware:
+
+```typescript
+import { serveStatic } from '@feathersjs/koa'
+import path from 'path'
+
+// Serve static files from public directory
+app.use(serveStatic(path.join(__dirname, 'public')))
+
+// Serve with options
+app.use(serveStatic('assets', {
+  maxage: 86400000, // 1 day
+  hidden: false
+}))
+```
+
+## Custom Response Formatting
+
+Customize how service results are sent as HTTP responses:
+
+```typescript
+import { rest, Middleware } from '@feathersjs/koa'
+
+const customFormatter: Middleware = async (ctx, next) => {
+  await next()
+
+  // Wrap all responses
+  if (ctx.body) {
+    ctx.body = {
+      success: true,
+      result: ctx.body,
+      timestamp: Date.now()
+    }
+  }
+}
+
+app.configure(rest({ formatter: customFormatter }))
+```
+
+## Using Existing Koa App
+
+Integrate Feathers into an existing Koa application:
+
+```typescript
+import Koa from 'koa'
+import { koa as feathersKoa } from '@feathersjs/koa'
+import { feathers } from '@feathersjs/feathers'
+
+// Existing Koa app
+const koaApp = new Koa()
+koaApp.use(async (ctx, next) => {
+  if (ctx.path === '/health') {
+    ctx.body = { status: 'ok' }
+  } else {
+    await next()
+  }
+})
+
+// Add Feathers to it
+const app = feathersKoa(feathers(), koaApp)
+app.configure(rest())
+app.use('/api/users', userService)
+
+await app.listen(3030)
+```
+
+## Pure Koa Middleware
+
+You can mix Feathers services with pure Koa middleware:
+
+```typescript
+import { koa, rest, bodyParser } from '@feathersjs/koa'
+import Router from '@koa/router'
+
+const app = koa(feathers())
+app.use(bodyParser())
+
+// Use Koa router
+const router = new Router()
+router.get('/status', (ctx) => {
+  ctx.body = { status: 'ok', uptime: process.uptime() }
+})
+
+app.use(router.routes())
+app.use(router.allowedMethods())
+
+// Configure Feathers REST
+app.configure(rest())
+
+// Register Feathers services
+app.use('/api/todos', todoService)
+```
+
+## Lifecycle Methods
+
+<Tabs>
+  <Tab title="listen()">
+    The `listen()` method starts the server and calls `setup()` on all services:
+
+    ```typescript
+    const server = await app.listen(3030)
+    console.log('Server started on port 3030')
+    ```
+  </Tab>
+
+  <Tab title="setup()">
+    Manually call `setup()` when using a custom server:
+
+    ```typescript
+    import http from 'http'
+
+    const server = http.createServer(app.callback())
+    await app.setup(server)
+    server.listen(3030)
+    ```
+  </Tab>
+
+  <Tab title="teardown()">
+    Clean shutdown closes the HTTP server and calls teardown on services:
+
+    ```typescript
+    // Graceful shutdown
+    process.on('SIGTERM', async () => {
+      await app.teardown()
+      console.log('Server stopped')
+      process.exit(0)
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## TypeScript Support
+
+```typescript
+import { feathers, Service } from '@feathersjs/feathers'
+import { koa, Application } from '@feathersjs/koa'
+
+interface User {
+  id: number
+  email: string
+  name: string
+}
+
+interface ServiceTypes {
+  users: Service<User>
+}
+
+const app: Application<ServiceTypes> = koa(feathers())
+
+app.use('/users', {
+  async find() {
+    return [{ id: 1, email: 'user@example.com', name: 'User' }]
+  }
+})
+
+await app.listen(3030)
+```
+
+## Middleware Execution Order
+
+Understanding middleware order is crucial in Koa:
+
+```typescript
+import { koa, rest, bodyParser, errorHandler } from '@feathersjs/koa'
+
+const app = koa(feathers())
+
+// 1. Error handler (first to catch all errors)
+app.use(errorHandler())
+
+// 2. Global middleware
+app.use(async (ctx, next) => {
+  console.log('Request:', ctx.method, ctx.path)
+  await next()
+  console.log('Response:', ctx.status)
+})
+
+// 3. Body parser
+app.use(bodyParser())
+
+// 4. REST configuration (sets up service routing)
+app.configure(rest())
+
+// 5. Custom routes
+app.use(async (ctx, next) => {
+  if (ctx.path === '/custom') {
+    ctx.body = { custom: true }
+  } else {
+    await next()
+  }
+})
+
+// 6. Services (handled by REST transport)
+app.use('/users', userService)
+```
+
+## API Reference
+
+### koa(feathersApp?, koaApp?)
+
+Wraps a Feathers application with Koa.
+
+**Parameters:**
+- `feathersApp` - A Feathers application instance
+- `koaApp` - Optional existing Koa app
+
+**Returns:** Combined Feathers + Koa application
+
+### rest(options?)
+
+Configures the REST transport.
+
+**Options:**
+- `formatter` - Custom response formatter middleware
+- `authentication` - Authentication settings
+  - `service` - Authentication service name
+  - `strategies` - Array of strategy names
+
+### errorHandler()
+
+Koa error handling middleware that catches errors and formats them as JSON.
+
+### bodyParser(options?)
+
+Parses request bodies. Wraps `koa-body`.
+
+**Options:** See [koa-body documentation](https://github.com/koajs/koa-body#options)
+
+### cors(options?)
+
+Enables CORS. Wraps `@koa/cors`.
+
+**Options:** See [@koa/cors documentation](https://github.com/koajs/cors#corsoptions)

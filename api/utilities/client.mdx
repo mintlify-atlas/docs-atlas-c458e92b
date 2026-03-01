@@ -1,0 +1,378 @@
+---
+title: Client
+description: Unified Feathers client for browser and Node.js applications
+---
+
+The `@feathersjs/client` package provides a complete Feathers client build that consolidates all client-side modules into a single package. It includes support for REST and WebSocket connections, authentication, and error handling.
+
+## Installation
+
+```bash
+npm install @feathersjs/client
+```
+
+### Browser Usage
+
+You can also use the pre-built browser bundle:
+
+```html
+<script src="//unpkg.com/@feathersjs/client@^5.0.0/dist/feathers.js"></script>
+<script>
+  const client = feathers()
+</script>
+```
+
+## Basic Usage
+
+### REST Client with Fetch
+
+```typescript
+import feathers from '@feathersjs/client'
+
+const client = feathers()
+
+// Configure REST client
+const restClient = feathers.rest('http://localhost:3030')
+client.configure(restClient.fetch(window.fetch.bind(window)))
+
+// Configure authentication
+client.configure(feathers.authentication())
+
+// Use services
+const messages = client.service('messages')
+const result = await messages.find()
+```
+
+### Socket.io Client
+
+```typescript
+import feathers from '@feathersjs/client'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030')
+const client = feathers()
+
+// Configure Socket.io client
+client.configure(feathers.socketio(socket))
+
+// Configure authentication
+client.configure(feathers.authentication())
+
+// Real-time events
+const messages = client.service('messages')
+messages.on('created', (message) => {
+  console.log('New message:', message)
+})
+```
+
+## Exported Modules
+
+The client package re-exports all necessary modules:
+
+### Core
+
+```typescript
+import feathers from '@feathersjs/client'
+// Default export is the feathers() function
+
+// Also exports everything from @feathersjs/feathers
+import { 
+  Application,
+  Service,
+  HookContext,
+  // ... all feathers types and utilities
+} from '@feathersjs/client'
+```
+
+### Authentication
+
+```typescript
+import { authentication } from '@feathersjs/client'
+
+const client = feathers()
+client.configure(authentication({
+  storage: window.localStorage
+}))
+```
+
+<ParamField path="options" type="object">
+  Authentication configuration options
+  
+  <ParamField path="storage" type="Storage">
+    Storage instance for JWT token (defaults to localStorage in browser)
+  </ParamField>
+  
+  <ParamField path="storageKey" type="string">
+    Key name for storing the JWT (defaults to 'feathers-jwt')
+  </ParamField>
+  
+  <ParamField path="jwtStrategy" type="string">
+    Name of the JWT authentication strategy (defaults to 'jwt')
+  </ParamField>
+</ParamField>
+
+### REST Client
+
+```typescript
+import { rest } from '@feathersjs/client'
+
+const restClient = rest('http://api.example.com')
+
+// With fetch
+client.configure(restClient.fetch(window.fetch.bind(window)))
+
+// With custom headers
+client.configure(restClient.fetch(window.fetch.bind(window), {
+  headers: {
+    'X-Custom-Header': 'value'
+  }
+}))
+```
+
+<ParamField path="baseUrl" type="string">
+  The base URL of the Feathers API server
+</ParamField>
+
+<ResponseField name="return" type="RestClient">
+  REST client instance with transport methods (fetch, axios, etc.)
+</ResponseField>
+
+### Socket.io Client
+
+```typescript
+import { socketio } from '@feathersjs/client'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030', {
+  transports: ['websocket']
+})
+
+client.configure(socketio(socket))
+```
+
+<ParamField path="socket" type="Socket">
+  Socket.io client instance
+</ParamField>
+
+<ParamField path="options" type="object">
+  Socket.io client configuration
+  
+  <ParamField path="timeout" type="number">
+    Request timeout in milliseconds
+  </ParamField>
+</ParamField>
+
+### Error Handling
+
+```typescript
+import { errors } from '@feathersjs/client'
+
+try {
+  await messages.create({ text: '' })
+} catch (error) {
+  if (error instanceof errors.BadRequest) {
+    console.error('Invalid request:', error.message)
+  } else if (error instanceof errors.NotAuthenticated) {
+    console.error('Please log in')
+  }
+}
+```
+
+Available error classes:
+- `BadRequest` (400)
+- `NotAuthenticated` (401)
+- `PaymentError` (402)
+- `Forbidden` (403)
+- `NotFound` (404)
+- `MethodNotAllowed` (405)
+- `NotAcceptable` (406)
+- `Timeout` (408)
+- `Conflict` (409)
+- `Unprocessable` (422)
+- `TooManyRequests` (429)
+- `GeneralError` (500)
+- `NotImplemented` (501)
+- `Unavailable` (503)
+
+## Complete Examples
+
+### Browser Client with Authentication
+
+```typescript
+import feathers from '@feathersjs/client'
+import io from 'socket.io-client'
+
+// Initialize client
+const socket = io('http://localhost:3030')
+const client = feathers()
+
+// Configure transport
+client.configure(feathers.socketio(socket))
+
+// Configure authentication
+client.configure(feathers.authentication({
+  storage: window.localStorage
+}))
+
+// Login
+async function login(email: string, password: string) {
+  try {
+    const { accessToken } = await client.authenticate({
+      strategy: 'local',
+      email,
+      password
+    })
+    console.log('Logged in successfully')
+    return accessToken
+  } catch (error) {
+    console.error('Login failed:', error.message)
+  }
+}
+
+// Use authenticated service
+async function createMessage(text: string) {
+  const messages = client.service('messages')
+  try {
+    const message = await messages.create({ text })
+    return message
+  } catch (error) {
+    if (error instanceof feathers.errors.NotAuthenticated) {
+      await login('user@example.com', 'password')
+      return createMessage(text)
+    }
+    throw error
+  }
+}
+```
+
+### Node.js Client
+
+```typescript
+import feathers from '@feathersjs/client'
+import fetch from 'node-fetch'
+
+const client = feathers()
+
+// Configure REST client with node-fetch
+const restClient = feathers.rest('http://localhost:3030')
+client.configure(restClient.fetch(fetch))
+
+// Configure authentication
+client.configure(feathers.authentication({
+  storage: {
+    getItem: (key: string) => Promise.resolve(null),
+    setItem: (key: string, value: string) => Promise.resolve(),
+    removeItem: (key: string) => Promise.resolve()
+  }
+}))
+
+// Use services
+const users = client.service('users')
+const userList = await users.find({
+  query: { $limit: 10 }
+})
+```
+
+### Real-time Events
+
+```typescript
+import feathers from '@feathersjs/client'
+import io from 'socket.io-client'
+
+const socket = io('http://localhost:3030')
+const client = feathers()
+client.configure(feathers.socketio(socket))
+
+const messages = client.service('messages')
+
+// Listen to service events
+messages.on('created', (message) => {
+  console.log('New message created:', message)
+})
+
+messages.on('updated', (message) => {
+  console.log('Message updated:', message)
+})
+
+messages.on('patched', (message) => {
+  console.log('Message patched:', message)
+})
+
+messages.on('removed', (message) => {
+  console.log('Message removed:', message)
+})
+
+// Remove event listener
+const handler = (message) => console.log(message)
+messages.on('created', handler)
+messages.off('created', handler)
+```
+
+## TypeScript Support
+
+The client package includes full TypeScript support:
+
+```typescript
+import feathers, { Application } from '@feathersjs/client'
+import { User, Message } from './types'
+
+interface ServiceTypes {
+  users: User
+  messages: Message
+}
+
+const client: Application<ServiceTypes> = feathers()
+
+// Type-safe service access
+const users = client.service('users')
+const user: User = await users.get(1)
+
+const messages = client.service('messages')
+const messageList = await messages.find({
+  query: { userId: user.id }
+})
+```
+
+## Browser Bundles
+
+The package provides several pre-built browser bundles:
+
+- `dist/feathers.js` - Full client with all features
+- `dist/feathers.min.js` - Minified full client
+- `dist/core.js` - Core only (no transport or auth)
+- `dist/core.min.js` - Minified core
+
+Use in HTML:
+
+```html
+<!-- Full client -->
+<script src="//unpkg.com/@feathersjs/client@^5.0.0/dist/feathers.min.js"></script>
+
+<!-- Core only -->
+<script src="//unpkg.com/@feathersjs/client@^5.0.0/dist/core.min.js"></script>
+```
+
+## Module Export Pattern
+
+The package uses a special export pattern for CommonJS compatibility:
+
+```typescript
+import feathers from '@feathersjs/client'
+
+// Default export is the feathers function
+const app = feathers()
+
+// Also available as named exports
+import { authentication, rest, socketio, errors } from '@feathersjs/client'
+```
+
+In CommonJS:
+
+```javascript
+const feathers = require('@feathersjs/client')
+const { authentication, rest, socketio } = require('@feathersjs/client')
+
+// Both work
+const app1 = feathers()
+const app2 = feathers.default()
+```

@@ -1,0 +1,330 @@
+---
+title: Express Transport
+description: API reference for @feathersjs/express transport including REST provider and Express framework bindings
+---
+
+# Express Transport
+
+The `@feathersjs/express` module provides Express framework bindings and a REST API provider for Feathers applications.
+
+## Installation
+
+```bash
+npm install @feathersjs/express express
+```
+
+## feathersExpress()
+
+Creates a Feathers application that extends an Express app with Feathers functionality.
+
+### Signature
+
+```typescript
+function feathersExpress<S = any, C = any>(
+  feathersApp?: FeathersApplication<S, C>,
+  expressApp?: Express
+): Application<S, C>
+```
+
+<ParamField path="feathersApp" type="FeathersApplication" optional>
+  A Feathers application instance to extend with Express functionality
+</ParamField>
+
+<ParamField path="expressApp" type="Express" optional>
+  An Express application instance (defaults to `express()`)
+</ParamField>
+
+### Returns
+
+<ResponseField name="Application" type="Application<S, C>">
+  Combined Express and Feathers application with extended functionality including:
+  - All Express app methods and middleware
+  - All Feathers service and hook capabilities
+  - Enhanced `listen()` method that calls Feathers `setup()`
+  - Enhanced `use()` method that handles both Express middleware and Feathers services
+</ResponseField>
+
+### Example
+
+```typescript
+import feathers from '@feathersjs/feathers'
+import express, { rest, json, urlencoded } from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Express middleware
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Feathers REST transport
+app.configure(rest())
+
+// Register services
+app.use('/messages', messageService)
+
+// Start server
+app.listen(3030)
+```
+
+## rest()
+
+Configures the REST transport provider for Feathers services.
+
+### Signature
+
+```typescript
+function rest(options?: RestOptions | RequestHandler): (app: Application) => void
+```
+
+<ParamField path="options" type="RestOptions | RequestHandler" optional>
+  REST configuration options or a custom formatter function
+</ParamField>
+
+### RestOptions
+
+<ParamField path="formatter" type="RequestHandler" optional>
+  Custom response formatter middleware (defaults to JSON formatter)
+</ParamField>
+
+<ParamField path="authentication" type="AuthenticationSettings" optional>
+  Authentication configuration for parsing credentials from HTTP requests
+</ParamField>
+
+### Example
+
+```typescript
+import express, { rest } from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Use default REST provider
+app.configure(rest())
+
+// With custom formatter
+app.configure(rest((req, res, next) => {
+  res.format({
+    'application/json': () => res.json(res.data)
+  })
+}))
+
+// With authentication options
+app.configure(rest({
+  authentication: {
+    service: 'authentication',
+    strategies: ['jwt', 'local']
+  }
+}))
+```
+
+## errorHandler()
+
+Express error handling middleware that formats Feathers errors.
+
+### Signature
+
+```typescript
+function errorHandler(options?: ErrorHandlerOptions): ErrorRequestHandler
+```
+
+<ParamField path="options" type="ErrorHandlerOptions" optional>
+  Error handler configuration options
+</ParamField>
+
+### ErrorHandlerOptions
+
+<ParamField path="public" type="string" optional>
+  Path to public directory for HTML error pages
+</ParamField>
+
+<ParamField path="logger" type="boolean | { error?: Function, info?: Function }" optional>
+  Logger configuration for error logging
+</ParamField>
+
+<ParamField path="html" type="object | Function" optional>
+  HTML error page configuration or custom handler function
+</ParamField>
+
+<ParamField path="json" type="object | Function" optional>
+  JSON error response configuration or custom handler function
+</ParamField>
+
+### Example
+
+```typescript
+import express, { errorHandler } from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Use after all routes and services
+app.use(errorHandler({
+  logger: console,
+  html: {
+    404: 'path/to/404.html',
+    500: 'path/to/500.html'
+  }
+}))
+```
+
+## notFound()
+
+Middleware that creates a NotFound error for unmatched routes.
+
+### Signature
+
+```typescript
+function notFound(options?: { verbose?: boolean }): RequestHandler
+```
+
+<ParamField path="options.verbose" type="boolean" optional default="false">
+  Include the requested URL in the error message
+</ParamField>
+
+### Example
+
+```typescript
+import express, { notFound, errorHandler } from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Use before error handler
+app.use(notFound())
+app.use(errorHandler())
+```
+
+## authenticate()
+
+Express middleware for authenticating requests.
+
+### Signature
+
+```typescript
+function authenticate(
+  settings: string | AuthenticationSettings,
+  ...strategies: string[]
+): RequestHandler
+```
+
+<ParamField path="settings" type="string | AuthenticationSettings">
+  Authentication service name or settings object
+</ParamField>
+
+<ParamField path="strategies" type="string[]" optional>
+  Authentication strategies to use
+</ParamField>
+
+### AuthenticationSettings
+
+<ParamField path="service" type="string" optional>
+  Name of the authentication service
+</ParamField>
+
+<ParamField path="strategies" type="string[]" optional>
+  Array of authentication strategy names
+</ParamField>
+
+### Example
+
+```typescript
+import express, { authenticate } from '@feathersjs/express'
+
+// Protect specific routes
+app.get('/protected', 
+  authenticate('jwt'),
+  (req, res) => {
+    res.json({ message: 'Authenticated!' })
+  }
+)
+
+// Protect a service
+app.use('/messages', 
+  authenticate('jwt'),
+  messageService
+)
+```
+
+## parseAuthentication()
+
+Middleware that parses authentication credentials from HTTP headers.
+
+### Signature
+
+```typescript
+function parseAuthentication(settings?: AuthenticationSettings): RequestHandler
+```
+
+<ParamField path="settings" type="AuthenticationSettings" optional>
+  Authentication parsing configuration
+</ParamField>
+
+### Example
+
+```typescript
+import express, { parseAuthentication } from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Automatically parse authentication from headers
+app.use(parseAuthentication({
+  strategies: ['jwt', 'api-key']
+}))
+```
+
+## Exported Express Utilities
+
+The module also exports commonly used Express utilities:
+
+```typescript
+import {
+  json,           // JSON body parser
+  urlencoded,     // URL-encoded body parser
+  static,         // Static file serving
+  Router,         // Express router
+  cors,           // CORS middleware
+  compression     // Response compression
+} from '@feathersjs/express'
+```
+
+## Service Options
+
+Express-specific service options can be configured when registering services:
+
+```typescript
+app.use('/messages', messageService, {
+  express: {
+    before: [/* middleware before service */],
+    after: [/* middleware after service */]
+  }
+})
+```
+
+<ParamField path="express.before" type="RequestHandler[]" optional>
+  Middleware to run before the service handler
+</ParamField>
+
+<ParamField path="express.after" type="RequestHandler[]" optional>
+  Middleware to run after the service handler
+</ParamField>
+
+## Request Extensions
+
+The Express request object is extended with Feathers-specific properties:
+
+<ResponseField name="req.feathers" type="Params">
+  Feathers params object containing provider, headers, and other metadata
+</ResponseField>
+
+<ResponseField name="req.lookup" type="RouteLookup">
+  Service route lookup information
+</ResponseField>
+
+## Response Extensions
+
+The Express response object is extended with:
+
+<ResponseField name="res.data" type="any">
+  The service method result data
+</ResponseField>
+
+<ResponseField name="res.hook" type="HookContext">
+  The hook context from the service call
+</ResponseField>

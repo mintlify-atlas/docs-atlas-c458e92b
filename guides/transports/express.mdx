@@ -1,0 +1,493 @@
+---
+title: Express Integration
+description: Learn how to integrate Feathers with Express for HTTP/REST APIs with middleware support
+---
+
+The `@feathersjs/express` package provides seamless integration between Feathers and Express, combining the power of Feathers services with Express's rich middleware ecosystem.
+
+## Installation
+
+```bash
+npm install @feathersjs/express express
+```
+
+## Basic Setup
+
+<Steps>
+  <Step title="Create the Express application">
+    The Express integration wraps a Feathers application with Express functionality:
+
+    ```typescript
+    import { feathers } from '@feathersjs/feathers'
+    import express from '@feathersjs/express'
+
+    const app = express(feathers())
+    ```
+  </Step>
+
+  <Step title="Configure REST transport">
+    Enable the REST transport to expose services via HTTP:
+
+    ```typescript
+    import { rest } from '@feathersjs/express'
+
+    app.configure(rest())
+    ```
+  </Step>
+
+  <Step title="Register services">
+    Services are automatically exposed as REST endpoints:
+
+    ```typescript
+    app.use('/users', {
+      async find() {
+        return [{ id: 1, name: 'Alice' }]
+      },
+      async get(id) {
+        return { id, name: 'Alice' }
+      }
+    })
+    ```
+  </Step>
+
+  <Step title="Add error handling">
+    Use built-in error handlers for production-ready error responses:
+
+    ```typescript
+    import { errorHandler, notFound } from '@feathersjs/express'
+
+    app.use(notFound())
+    app.use(errorHandler())
+    ```
+  </Step>
+
+  <Step title="Start the server">
+    The `listen` method automatically calls `setup()` on all services:
+
+    ```typescript
+    await app.listen(3030)
+    console.log('Feathers app started on http://localhost:3030')
+    ```
+  </Step>
+</Steps>
+
+## Complete Example
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import express, {
+  rest,
+  json,
+  urlencoded,
+  cors,
+  errorHandler,
+  notFound
+} from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Enable CORS, body parsing and compression
+app.use(cors())
+app.use(json())
+app.use(urlencoded({ extended: true }))
+
+// Configure REST transport
+app.configure(rest())
+
+// Register services
+app.use('/messages', {
+  async find() {
+    return [
+      { id: 1, text: 'Hello world' },
+      { id: 2, text: 'How are you?' }
+    ]
+  },
+  async create(data) {
+    return { id: 3, ...data }
+  }
+})
+
+// Error handling
+app.use(notFound())
+app.use(errorHandler())
+
+// Start server
+const server = await app.listen(3030)
+console.log('Server ready on http://localhost:3030')
+```
+
+## Service Middleware
+
+You can add Express middleware before and after service calls:
+
+```typescript
+import { Request, Response, NextFunction } from 'express'
+
+const logRequest = (req: Request, res: Response, next: NextFunction) => {
+  console.log(`${req.method} ${req.url}`)
+  next()
+}
+
+const addTimestamp = (req: Request, res: Response, next: NextFunction) => {
+  res.data = { ...res.data, timestamp: new Date() }
+  next()
+}
+
+// Middleware runs before service method, then after
+app.use('/todos',
+  logRequest,              // before middleware
+  todoService,             // the service
+  addTimestamp,            // after middleware
+  { methods: ['find', 'get', 'create'] }
+)
+```
+
+### How Middleware Works
+
+<Tabs>
+  <Tab title="Before Middleware">
+    Middleware added **before** the service runs before the service method is called:
+
+    ```typescript
+    const validateAuth = (req, res, next) => {
+      if (!req.headers.authorization) {
+        return res.status(401).json({ error: 'Unauthorized' })
+      }
+      next()
+    }
+
+    app.use('/protected', validateAuth, protectedService)
+    ```
+  </Tab>
+
+  <Tab title="After Middleware">
+    Middleware added **after** the service has access to `res.data` with the service result:
+
+    ```typescript
+    const formatResponse = (req, res, next) => {
+      // Modify the service result
+      res.data = {
+        status: 'success',
+        data: res.data,
+        timestamp: new Date()
+      }
+      next()
+    }
+
+    app.use('/api/users', userService, formatResponse)
+    ```
+  </Tab>
+</Tabs>
+
+## Authentication
+
+Integrate Feathers authentication with Express middleware:
+
+```typescript
+import { authenticate } from '@feathersjs/express'
+
+// Protect specific routes
+app.use('/admin',
+  authenticate('jwt'),
+  adminService
+)
+
+// Or use as route middleware
+app.get('/profile',
+  authenticate('jwt'),
+  (req, res) => {
+    res.json({ user: req.feathers.user })
+  }
+)
+```
+
+### Authentication Settings
+
+```typescript
+import { rest, parseAuthentication } from '@feathersjs/express'
+
+// Configure REST with authentication parsing
+app.configure(rest({
+  authentication: {
+    service: 'authentication',
+    strategies: ['jwt', 'local']
+  }
+}))
+
+// Or add globally
+app.use(parseAuthentication({
+  strategies: ['jwt']
+}))
+```
+
+## Error Handling
+
+The Express integration provides comprehensive error handling:
+
+<CodeGroup>
+```typescript Default Handler
+import { errorHandler } from '@feathersjs/express'
+
+// Use default error handler (recommended)
+app.use(errorHandler())
+```
+
+```typescript Custom HTML Errors
+import { errorHandler } from '@feathersjs/express'
+
+app.use(errorHandler({
+  html: {
+    401: '/errors/unauthorized.html',
+    404: '/errors/not-found.html',
+    default: '/errors/error.html'
+  }
+}))
+```
+
+```typescript Custom JSON Errors
+app.use(errorHandler({
+  json: (error, req, res, next) => {
+    res.json({
+      error: error.message,
+      code: error.code,
+      timestamp: new Date().toISOString()
+    })
+  }
+}))
+```
+
+```typescript Disable Logging
+app.use(errorHandler({
+  logger: false
+}))
+```
+</CodeGroup>
+
+### Not Found Handler
+
+```typescript
+import { notFound } from '@feathersjs/express'
+
+// Simple 404
+app.use(notFound())
+
+// Verbose mode includes the URL in error message
+app.use(notFound({ verbose: true }))
+```
+
+## Static Files
+
+Serve static files using Express's static middleware:
+
+```typescript
+import { serveStatic } from '@feathersjs/express'
+import path from 'path'
+
+// Serve static files from public directory
+app.use('/', serveStatic(path.join(__dirname, 'public')))
+
+// Or use Express directly
+import express from 'express'
+app.use('/assets', express.static('assets'))
+```
+
+## Custom Response Formatting
+
+Customize how service results are sent as HTTP responses:
+
+```typescript
+import { rest, RequestHandler } from '@feathersjs/express'
+
+const customFormatter: RequestHandler = (req, res, next) => {
+  if (res.data === undefined) {
+    return next()
+  }
+
+  // Custom formatting logic
+  res.format({
+    'application/json': () => {
+      res.json({
+        success: true,
+        result: res.data,
+        timestamp: Date.now()
+      })
+    },
+    'text/html': () => {
+      res.send(`<pre>${JSON.stringify(res.data, null, 2)}</pre>`)
+    }
+  })
+}
+
+app.configure(rest({ formatter: customFormatter }))
+```
+
+## Using Existing Express App
+
+You can integrate Feathers into an existing Express application:
+
+```typescript
+import express from 'express'
+import feathersExpress from '@feathersjs/express'
+import { feathers } from '@feathersjs/feathers'
+
+// Existing Express app
+const expressApp = express()
+expressApp.get('/health', (req, res) => res.json({ status: 'ok' }))
+
+// Add Feathers to it
+const app = feathersExpress(feathers(), expressApp)
+
+app.configure(rest())
+app.use('/api/users', userService)
+
+app.listen(3030)
+```
+
+## Express Sub-Apps
+
+Feathers works seamlessly with Express sub-apps and routers:
+
+```typescript
+import express, { Router } from '@feathersjs/express'
+
+const app = express(feathers())
+
+// Use Express Router
+const apiRouter = Router()
+apiRouter.get('/status', (req, res) => res.json({ ok: true }))
+app.use('/api', apiRouter)
+
+// Use Express sub-apps
+const adminApp = express()
+adminApp.get('/dashboard', (req, res) => res.send('Admin'))
+app.use('/admin', adminApp)
+```
+
+## HTTPS Support
+
+Run Feathers with HTTPS:
+
+```typescript
+import https from 'https'
+import fs from 'fs'
+import { feathers } from '@feathersjs/feathers'
+import express, { rest } from '@feathersjs/express'
+
+const app = express(feathers())
+app.configure(rest())
+
+const httpsServer = https.createServer({
+  key: fs.readFileSync('privatekey.pem'),
+  cert: fs.readFileSync('certificate.pem')
+}, app)
+
+await app.setup(httpsServer)
+httpsServer.listen(443)
+```
+
+## Lifecycle Methods
+
+<Tabs>
+  <Tab title="listen()">
+    The `listen()` method starts the server and calls `setup()` on all services:
+
+    ```typescript
+    const server = await app.listen(3030)
+    console.log('Server started')
+    ```
+  </Tab>
+
+  <Tab title="setup()">
+    Manually call `setup()` when using a custom server:
+
+    ```typescript
+    const server = http.createServer(app)
+    await app.setup(server)
+    server.listen(3030)
+    ```
+  </Tab>
+
+  <Tab title="teardown()">
+    Clean shutdown closes the HTTP server and calls teardown on services:
+
+    ```typescript
+    await app.teardown()
+    console.log('Server stopped')
+    ```
+  </Tab>
+</Tabs>
+
+## TypeScript Support
+
+```typescript
+import { feathers, Service } from '@feathersjs/feathers'
+import express, { Application } from '@feathersjs/express'
+
+interface User {
+  id: number
+  email: string
+  name: string
+}
+
+interface ServiceTypes {
+  users: Service<User>
+}
+
+interface Configuration {
+  host: string
+  port: number
+}
+
+const app: Application<ServiceTypes, Configuration> = express(feathers())
+
+app.set('host', 'localhost')
+app.set('port', 3030)
+
+app.use('/users', {
+  async find() {
+    return [{ id: 1, email: 'user@example.com', name: 'User' }]
+  }
+})
+
+const port = app.get('port')
+await app.listen(port)
+```
+
+## API Reference
+
+### express(feathersApp, expressApp?)
+
+Wraps a Feathers application with Express.
+
+**Parameters:**
+- `feathersApp` - A Feathers application instance
+- `expressApp` - Optional existing Express app
+
+**Returns:** Combined Feathers + Express application
+
+### rest(options?)
+
+Configures the REST transport.
+
+**Options:**
+- `formatter` - Custom response formatter middleware
+- `authentication` - Authentication settings
+  - `service` - Authentication service name
+  - `strategies` - Array of strategy names
+
+### errorHandler(options?)
+
+Express error handling middleware.
+
+**Options:**
+- `logger` - Logger instance or false to disable
+- `html` - HTML error handlers (function or file paths)
+- `json` - JSON error handlers (function or default)
+- `public` - Path to public error pages directory
+
+### notFound(options?)
+
+Handles 404 errors.
+
+**Options:**
+- `verbose` - Include URL in error message

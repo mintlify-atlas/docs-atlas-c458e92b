@@ -1,0 +1,260 @@
+---
+title: 'feathers generate app'
+description: 'Generate a new Feathers application with your preferred database, framework, and configuration'
+---
+
+## Overview
+
+The `feathers generate app` command scaffolds a complete Feathers application with all necessary configuration files, dependencies, and project structure.
+
+## Usage
+
+```bash
+feathers generate app [options]
+```
+
+Or using the shorthand:
+
+```bash
+feathers g app [options]
+```
+
+## Options
+
+<ParamField path="--name" type="string">
+  The name of your application. If not provided, defaults to the current directory name.
+  
+  ```bash
+  feathers generate app --name my-api
+  ```
+</ParamField>
+
+## Interactive Prompts
+
+When you run the command without options, you'll be prompted for the following configuration:
+
+### Language Selection
+
+**Prompt:** "Do you want to use JavaScript or TypeScript?"
+
+**Choices:**
+- TypeScript (recommended)
+- JavaScript
+
+### Application Name
+
+**Prompt:** "What is the name of your application?"
+
+**Default:** Current directory name
+
+**Validation:** Cannot be the same as a dependency name
+
+### Description
+
+**Prompt:** "Write a short description"
+
+A brief description of your application that will be added to `package.json`.
+
+### HTTP Framework
+
+**Prompt:** "Which HTTP framework do you want to use?"
+
+**Choices:**
+- KoaJS (recommended)
+- Express
+
+### API Transports
+
+**Prompt:** "What APIs do you want to offer?"
+
+**Choices (multi-select):**
+- HTTP (REST) - checked by default
+- Real-time - checked by default
+
+### Package Manager
+
+**Prompt:** "Which package manager are you using?"
+
+**Choices:**
+- npm
+- Yarn
+- pnpm
+
+### Client Generation
+
+**Prompt:** "Generate end-to-end typed client?"
+
+Generates a typed client that can be used with React, Angular, Vue, React Native, Node.js, etc.
+
+### Schema Format
+
+**Prompt:** "What is your preferred schema (model) definition format?"
+
+**Choices:**
+- TypeBox (recommended)
+- JSON schema
+- No schema (not recommended)
+
+Schemas allow you to type, validate, secure, and populate your data and configuration.
+
+### Database Connection
+
+**Prompt:** "Which database are you connecting to?"
+
+**Choices:**
+- SQLite
+- MongoDB
+- PostgreSQL
+- MySQL/MariaDB
+- Microsoft SQL
+- Another database (not configured automatically)
+
+**Connection String Prompt:** "Enter your database connection string"
+
+**Default connection strings:**
+- MongoDB: `mongodb://127.0.0.1:27017/{app-name}`
+- MySQL: `mysql://root:@localhost:3306/{app-name}`
+- PostgreSQL: `postgres://postgres:@localhost:5432/{app-name}`
+- SQLite: `{app-name}.sqlite`
+- MSSQL: `mssql://root:password@localhost:1433/{app-name}`
+
+## Generated Structure
+
+The generator creates the following files and directories:
+
+```
+my-app/
+├── src/
+│   ├── services/
+│   ├── client.ts
+│   ├── index.ts
+│   ├── app.ts
+│   ├── logger.ts
+│   ├── configuration.ts
+│   ├── channels.ts
+│   ├── declarations.ts
+│   └── validators.ts
+├── test/
+│   ├── app.test.ts
+│   └── client.test.ts
+├── config/
+│   └── default.json
+├── public/
+│   └── index.html
+├── .gitignore
+├── .prettierrc
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+## Terminal Output Example
+
+```bash
+$ feathers generate app
+? Do you want to use JavaScript or TypeScript? TypeScript
+? What is the name of your application? my-feathers-app
+? Write a short description A modern real-time API
+? Which HTTP framework do you want to use? KoaJS (recommended)
+? What APIs do you want to offer? HTTP (REST), Real-time
+? Which package manager are you using? npm
+? Generate end-to-end typed client? Yes
+? What is your preferred schema (model) definition format? TypeBox (recommended)
+? Which database are you connecting to? MongoDB
+? Enter your database connection string mongodb://127.0.0.1:27017/my-feathers-app
+
+Generating application...
+✓ Created package.json
+✓ Created tsconfig.json
+✓ Created src/index.ts
+✓ Created src/app.ts
+✓ Created src/logger.ts
+✓ Created src/configuration.ts
+✓ Created src/channels.ts
+✓ Created config/default.json
+✓ Created public/index.html
+
+Installing dependencies...
+✓ Installed @feathersjs/feathers
+✓ Installed @feathersjs/koa
+✓ Installed @feathersjs/socketio
+✓ Installed @feathersjs/mongodb
+✓ Installed mongodb
+
+Installing dev dependencies...
+✓ Installed typescript
+✓ Installed @types/node
+✓ Installed nodemon
+```
+
+## Dependencies Installed
+
+The generator automatically installs the required dependencies based on your choices:
+
+### Core Dependencies
+- `@feathersjs/feathers` - Core Feathers functionality
+- `@feathersjs/errors` - Error handling
+- `@feathersjs/schema` - Schema validation
+- `@feathersjs/configuration` - Configuration management
+- `@feathersjs/transport-commons` - Transport layer
+- `@feathersjs/adapter-commons` - Database adapter commons
+- `@feathersjs/authentication` - Authentication server
+- `@feathersjs/authentication-client` - Authentication client
+- `winston` - Logging
+
+### Framework-Specific
+- `@feathersjs/koa` (if KoaJS selected)
+- `@feathersjs/express` and `compression` (if Express selected)
+- `@feathersjs/socketio` (if Real-time selected)
+
+### Schema-Specific
+- `@feathersjs/typebox` (if TypeBox selected)
+
+### Database-Specific
+- Database adapter (e.g., `@feathersjs/mongodb`, `@feathersjs/knex`)
+- Database client (e.g., `mongodb`, `pg`, `mysql`, `sqlite3`)
+- `knex` (for SQL databases)
+
+### Dev Dependencies
+- `nodemon` - Development server
+- `axios` - HTTP client for tests
+- `mocha` - Testing framework
+- `cross-env` - Cross-platform environment variables
+- `prettier` - Code formatting
+- `@feathersjs/cli` - CLI tools
+- `@feathersjs/rest-client` - REST client for tests
+
+### TypeScript-Specific Dev Dependencies
+- `@types/mocha`
+- `@types/node`
+- `ts-node`
+- `typescript`
+- `shx` - Cross-platform shell commands
+
+## Next Steps
+
+After generating your app:
+
+<Steps>
+  <Step title="Navigate to your app directory">
+    ```bash
+    cd my-feathers-app
+    ```
+  </Step>
+  
+  <Step title="Start the development server">
+    ```bash
+    npm start
+    ```
+  </Step>
+  
+  <Step title="Generate your first service">
+    ```bash
+    feathers generate service
+    ```
+  </Step>
+</Steps>
+
+<Card title="Generate a service" icon="server" href="/cli/commands/service">
+  Add your first service to handle data operations
+</Card>

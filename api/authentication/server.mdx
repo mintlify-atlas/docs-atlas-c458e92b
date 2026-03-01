@@ -1,0 +1,549 @@
+---
+title: Server Authentication API
+description: Complete API reference for @feathersjs/authentication server-side authentication
+---
+
+The `@feathersjs/authentication` package provides server-side authentication through the `AuthenticationService` and various hooks and utilities.
+
+## Installation
+
+```bash
+npm install @feathersjs/authentication
+```
+
+## AuthenticationService
+
+The main authentication service that extends `AuthenticationBase` and implements JWT-based authentication.
+
+### Constructor
+
+```typescript
+new AuthenticationService(app: Application, configKey?: string, options?: object)
+```
+
+<ParamField path="app" type="Application" required>
+  The Feathers application instance
+</ParamField>
+
+<ParamField path="configKey" type="string" default="authentication">
+  The configuration key name in `app.get`
+</ParamField>
+
+<ParamField path="options" type="object">
+  Optional initial configuration options
+</ParamField>
+
+### Methods
+
+#### create
+
+Create and return a new JWT for a given authentication request. Triggers the `login` event.
+
+```typescript
+service.create(
+  data: AuthenticationRequest, 
+  params?: AuthenticationParams
+): Promise<AuthenticationResult>
+```
+
+<ParamField path="data" type="AuthenticationRequest" required>
+  The authentication request (must include `strategy` key)
+  
+  ```typescript
+  interface AuthenticationRequest {
+    strategy?: string
+    [key: string]: any
+  }
+  ```
+</ParamField>
+
+<ParamField path="params" type="AuthenticationParams">
+  Service call parameters
+  
+  ```typescript
+  interface AuthenticationParams extends Params {
+    payload?: { [key: string]: any }
+    jwtOptions?: SignOptions
+    authStrategies?: string[]
+    secret?: string
+    [key: string]: any
+  }
+  ```
+</ParamField>
+
+<ResponseField name="accessToken" type="string">
+  The generated JWT access token
+</ResponseField>
+
+<ResponseField name="authentication" type="object">
+  Authentication metadata including strategy and decoded payload
+</ResponseField>
+
+<ResponseField name="user" type="object">
+  The authenticated entity (e.g., user object) if entity lookup is configured
+</ResponseField>
+
+**Example:**
+
+```typescript
+const result = await app.service('authentication').create({
+  strategy: 'local',
+  email: 'user@example.com',
+  password: 'secret'
+})
+
+console.log(result.accessToken) // JWT token
+console.log(result.user) // User object
+```
+
+#### remove
+
+Mark a JWT as removed. By default only verifies the JWT and returns the result. Triggers the `logout` event.
+
+```typescript
+service.remove(
+  id: string | null, 
+  params?: AuthenticationParams
+): Promise<AuthenticationResult>
+```
+
+<ParamField path="id" type="string | null" required>
+  The JWT to remove or null. When an id is passed, it must match the `accessToken` in params.authentication
+</ParamField>
+
+<ParamField path="params" type="AuthenticationParams">
+  Service call parameters with authentication information
+</ParamField>
+
+**Example:**
+
+```typescript
+await app.service('authentication').remove(null, {
+  authentication: { accessToken: 'existing-jwt-token' }
+})
+```
+
+#### register
+
+Register a new authentication strategy.
+
+```typescript
+service.register(name: string, strategy: AuthenticationStrategy): void
+```
+
+<ParamField path="name" type="string" required>
+  The name to register the strategy under
+</ParamField>
+
+<ParamField path="strategy" type="AuthenticationStrategy" required>
+  The authentication strategy instance
+</ParamField>
+
+**Example:**
+
+```typescript
+import { LocalStrategy } from '@feathersjs/authentication-local'
+
+const authService = app.service('authentication')
+authService.register('local', new LocalStrategy())
+```
+
+#### getStrategy
+
+Returns a single strategy by name.
+
+```typescript
+service.getStrategy(name: string): AuthenticationStrategy | undefined
+```
+
+<ParamField path="name" type="string" required>
+  The strategy name
+</ParamField>
+
+#### createAccessToken
+
+Create a new access token with payload and options.
+
+```typescript
+service.createAccessToken(
+  payload: string | Buffer | object,
+  optsOverride?: SignOptions,
+  secretOverride?: Secret
+): Promise<string>
+```
+
+<ParamField path="payload" type="string | Buffer | object" required>
+  The JWT payload
+</ParamField>
+
+<ParamField path="optsOverride" type="SignOptions">
+  Options to extend the defaults (`configuration.jwtOptions`)
+</ParamField>
+
+<ParamField path="secretOverride" type="Secret">
+  Use a different secret instead of the configured one
+</ParamField>
+
+**Example:**
+
+```typescript
+const token = await authService.createAccessToken(
+  { userId: 123 },
+  { expiresIn: '7d' }
+)
+```
+
+#### verifyAccessToken
+
+Verify an access token.
+
+```typescript
+service.verifyAccessToken(
+  accessToken: string,
+  optsOverride?: JwtVerifyOptions,
+  secretOverride?: Secret
+): Promise<any>
+```
+
+<ParamField path="accessToken" type="string" required>
+  The token to verify
+</ParamField>
+
+<ParamField path="optsOverride" type="JwtVerifyOptions">
+  Verification options
+  
+  ```typescript
+  interface JwtVerifyOptions extends VerifyOptions {
+    algorithm?: string | string[]
+  }
+  ```
+</ParamField>
+
+<ParamField path="secretOverride" type="Secret">
+  Use a different secret for verification
+</ParamField>
+
+**Example:**
+
+```typescript
+try {
+  const payload = await authService.verifyAccessToken(token)
+  console.log(payload) // Decoded JWT payload
+} catch (error) {
+  console.error('Invalid token')
+}
+```
+
+### Properties
+
+#### configuration
+
+Returns the current authentication configuration.
+
+```typescript
+service.configuration: AuthenticationConfiguration
+```
+
+**Example:**
+
+```typescript
+const { secret, jwtOptions, authStrategies } = authService.configuration
+```
+
+#### strategyNames
+
+A list of all registered strategy names.
+
+```typescript
+service.strategyNames: string[]
+```
+
+## Configuration
+
+Configure authentication in your Feathers app configuration:
+
+```typescript
+interface AuthenticationConfiguration {
+  secret: string
+  authStrategies: string[]
+  jwtOptions?: {
+    header?: { typ: string }
+    audience?: string
+    issuer?: string
+    algorithm?: string
+    expiresIn?: string
+  }
+  service?: string
+  entity?: string
+  entityId?: string
+  oauth?: object
+}
+```
+
+<ParamField path="secret" type="string" required>
+  The secret used to sign and verify JWTs. Keep this secure!
+</ParamField>
+
+<ParamField path="authStrategies" type="string[]" required>
+  Array of allowed authentication strategy names
+</ParamField>
+
+<ParamField path="jwtOptions" type="object">
+  JWT signing options
+  - `header`: JWT header (default: `{ typ: 'access' }`)
+  - `audience`: The resource server where the token is processed
+  - `issuer`: The issuing server, application or resource (default: 'feathers')
+  - `algorithm`: Signing algorithm (default: 'HS256')
+  - `expiresIn`: Expiration time (default: '1d')
+</ParamField>
+
+<ParamField path="service" type="string">
+  The path of the entity service (e.g., 'users')
+</ParamField>
+
+<ParamField path="entity" type="string">
+  The name of the entity (default: 'user')
+</ParamField>
+
+<ParamField path="entityId" type="string">
+  The id field of the entity service. Auto-detected if not provided
+</ParamField>
+
+**Example:**
+
+```typescript
+// config/default.json
+{
+  "authentication": {
+    "secret": "your-secret-key",
+    "authStrategies": ["jwt", "local"],
+    "jwtOptions": {
+      "header": { "typ": "access" },
+      "audience": "https://yourdomain.com",
+      "issuer": "feathers",
+      "algorithm": "HS256",
+      "expiresIn": "1d"
+    },
+    "service": "users",
+    "entity": "user"
+  }
+}
+```
+
+## Hooks
+
+### authenticate
+
+Protect service methods by requiring authentication.
+
+```typescript
+import { authenticate } from '@feathersjs/authentication'
+
+authenticate(settings: string | AuthenticateHookSettings, ...strategies: string[])
+```
+
+<ParamField path="settings" type="string | AuthenticateHookSettings" required>
+  Strategy name(s) or settings object
+  
+  ```typescript
+  interface AuthenticateHookSettings {
+    service?: string
+    strategies?: string[]
+  }
+  ```
+</ParamField>
+
+<ParamField path="strategies" type="string[]">
+  Additional strategy names (when settings is a string)
+</ParamField>
+
+**Example:**
+
+```typescript
+// Require JWT authentication
+app.service('messages').hooks({
+  before: {
+    all: [authenticate('jwt')]
+  }
+})
+
+// Allow multiple strategies
+app.service('messages').hooks({
+  before: {
+    all: [authenticate('jwt', 'api-key')]
+  }
+})
+
+// With settings object
+app.service('messages').hooks({
+  before: {
+    all: [
+      authenticate({
+        strategies: ['jwt'],
+        service: 'authentication'
+      })
+    ]
+  }
+})
+```
+
+## JWTStrategy
+
+The built-in JWT authentication strategy.
+
+### Configuration
+
+```typescript
+interface JWTStrategyConfiguration {
+  header?: string
+  schemes?: string[]
+  service?: string
+  entity?: string
+  entityId?: string
+}
+```
+
+<ParamField path="header" type="string" default="Authorization">
+  The HTTP header to parse for the JWT
+</ParamField>
+
+<ParamField path="schemes" type="string[]" default="['Bearer', 'JWT']">
+  Allowed authentication schemes
+</ParamField>
+
+<ParamField path="service" type="string">
+  The entity service path (inherited from main auth config)
+</ParamField>
+
+<ParamField path="entity" type="string">
+  The entity name (inherited from main auth config)
+</ParamField>
+
+<ParamField path="entityId" type="string">
+  The entity id field (inherited from main auth config)
+</ParamField>
+
+**Example:**
+
+```typescript
+import { JWTStrategy } from '@feathersjs/authentication'
+
+authService.register('jwt', new JWTStrategy())
+```
+
+## AuthenticationBaseStrategy
+
+Base class for creating custom authentication strategies.
+
+```typescript
+import { AuthenticationBaseStrategy } from '@feathersjs/authentication'
+
+class CustomStrategy extends AuthenticationBaseStrategy {
+  async authenticate(authentication: AuthenticationRequest, params: Params) {
+    // Implement authentication logic
+    return {
+      authentication: { strategy: this.name },
+      user: { id: 1, email: 'user@example.com' }
+    }
+  }
+}
+```
+
+### Methods to Implement
+
+#### authenticate
+
+Authenticate an authentication request with this strategy.
+
+```typescript
+async authenticate(
+  authentication: AuthenticationRequest,
+  params: AuthenticationParams
+): Promise<AuthenticationResult>
+```
+
+#### parse (optional)
+
+Parse a basic HTTP request for authentication information.
+
+```typescript
+async parse(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<AuthenticationRequest | null>
+```
+
+#### handleConnection (optional)
+
+Update a real-time connection according to this strategy.
+
+```typescript
+async handleConnection(
+  event: ConnectionEvent,
+  connection: any,
+  authResult?: AuthenticationResult
+): Promise<void>
+```
+
+## Events
+
+The authentication service emits the following events:
+
+### login
+
+Emitted when a user successfully authenticates (after `create`).
+
+```typescript
+app.service('authentication').on('login', (authResult, params) => {
+  console.log('User logged in', authResult)
+})
+```
+
+### logout
+
+Emitted when a user logs out (after `remove`).
+
+```typescript
+app.service('authentication').on('logout', (authResult, params) => {
+  console.log('User logged out', authResult)
+})
+```
+
+## Complete Example
+
+```typescript
+import { feathers } from '@feathersjs/feathers'
+import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+import { LocalStrategy } from '@feathersjs/authentication-local'
+
+const app = feathers()
+
+// Configure authentication
+app.set('authentication', {
+  secret: 'your-secret-key',
+  authStrategies: ['jwt', 'local'],
+  service: 'users',
+  entity: 'user',
+  jwtOptions: {
+    expiresIn: '7d'
+  },
+  local: {
+    usernameField: 'email',
+    passwordField: 'password'
+  }
+})
+
+// Set up authentication service
+const authService = new AuthenticationService(app)
+authService.register('jwt', new JWTStrategy())
+authService.register('local', new LocalStrategy())
+
+app.use('authentication', authService)
+
+// Protect services
+app.service('messages').hooks({
+  before: {
+    all: [authenticate('jwt')]
+  }
+})
+```
