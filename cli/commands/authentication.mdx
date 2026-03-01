@@ -1,0 +1,263 @@
+---
+title: Authentication command
+description: Add authentication to your Feathers application
+---
+
+The `feathers generate authentication` command sets up authentication in your application. This includes creating a user service, configuring authentication strategies, and setting up OAuth providers if needed.
+
+## Usage
+
+```bash
+feathers generate authentication
+```
+
+**Alias:** `feathers g authentication`
+
+## Interactive Prompts
+
+When you run this command, you'll be prompted for:
+
+### Authentication Strategies
+
+<ParamField path="authStrategies" type="string[]" required>
+  The authentication methods to enable in your application
+  
+  **Choices (multiple selection):**
+  - `local` - Email + Password (checked by default)
+  - `google` - Google OAuth
+  - `facebook` - Facebook OAuth
+  - `twitter` - Twitter OAuth
+  - `github` - GitHub OAuth
+  - `auth0` - Auth0 OAuth
+  
+  You can select multiple strategies. Additional providers can be added later.
+</ParamField>
+
+### User Service Configuration
+
+If you select local (Email + Password) authentication:
+
+<ParamField path="service" type="string">
+  The name for the user service
+  
+  **Default:** `users`
+</ParamField>
+
+<ParamField path="path" type="string">
+  The API path for the user service
+  
+  **Default:** Same as service name (e.g., `/users`)
+</ParamField>
+
+<ParamField path="schema" type="string">
+  Schema validation library
+  
+  **Choices:**
+  - `typebox` - TypeBox (recommended)
+  - `json` - JSON Schema
+</ParamField>
+
+## What Gets Generated
+
+Running this command will:
+
+<Steps>
+  <Step title="Install authentication packages">
+    Installs required authentication packages:
+    ```bash
+    npm install @feathersjs/authentication @feathersjs/authentication-local
+    ```
+    
+    For OAuth strategies, also installs:
+    ```bash
+    npm install @feathersjs/authentication-oauth
+    ```
+  </Step>
+  
+  <Step title="Create user service">
+    Generates a complete user service with:
+    - Service class (`src/services/users/users.class.ts`)
+    - Schema definitions with password hashing (`src/services/users/users.schema.ts`)
+    - Service registration (`src/services/users/users.ts`)
+    - Shared types (`src/services/users/users.shared.ts`)
+  </Step>
+  
+  <Step title="Configure authentication">
+    Creates `src/authentication.ts` with:
+    - JWT strategy configuration
+    - Local strategy setup (if selected)
+    - OAuth strategy setup (if selected)
+  </Step>
+  
+  <Step title="Update configuration files">
+    Adds authentication configuration to:
+    - `config/default.json` - JWT secret, authentication settings
+    - `config/production.json` - Production-specific settings
+    
+    For OAuth strategies, adds provider client IDs and secrets.
+  </Step>
+  
+  <Step title="Register authentication">
+    Updates `src/app.ts` to configure authentication services and hooks
+  </Step>
+  
+  <Step title="Update client types">
+    Updates `src/client.ts` with authentication client configuration
+  </Step>
+</Steps>
+
+## Generated Files Example
+
+### User Service Schema
+
+```typescript src/services/users/users.schema.ts
+import { Type } from '@feathersjs/typebox'
+import { passwordHash } from '@feathersjs/authentication-local'
+
+export const userSchema = Type.Object({
+  id: Type.Number(),
+  email: Type.String({ format: 'email' }),
+  password: Type.Optional(Type.String())
+})
+
+export const userResolver = resolve<User, HookContext>({
+  properties: {
+    password: passwordHash({ strategy: 'local' })
+  }
+})
+```
+
+### Authentication Configuration
+
+```typescript src/authentication.ts
+import { AuthenticationService, JWTStrategy } from '@feathersjs/authentication'
+import { LocalStrategy } from '@feathersjs/authentication-local'
+import { oauth, OAuthStrategy } from '@feathersjs/authentication-oauth'
+import type { Application } from './declarations'
+
+export const authentication = (app: Application) => {
+  const authentication = new AuthenticationService(app)
+
+  authentication.register('jwt', new JWTStrategy())
+  authentication.register('local', new LocalStrategy())
+  authentication.register('google', new OAuthStrategy())
+
+  app.use('authentication', authentication)
+  app.configure(oauth())
+}
+```
+
+### Configuration
+
+```json config/default.json
+{
+  "authentication": {
+    "entity": "user",
+    "service": "users",
+    "secret": "supersecret",
+    "authStrategies": ["jwt", "local"],
+    "jwtOptions": {
+      "header": { "typ": "access" },
+      "audience": "https://yourdomain.com",
+      "algorithm": "HS256",
+      "expiresIn": "1d"
+    },
+    "local": {
+      "usernameField": "email",
+      "passwordField": "password"
+    },
+    "oauth": {
+      "redirect": "/",
+      "google": {
+        "key": "<google oauth client id>",
+        "secret": "<google oauth client secret>"
+      }
+    }
+  }
+}
+```
+
+## OAuth Setup
+
+If you selected OAuth providers, you'll need to:
+
+<Steps>
+  <Step title="Create OAuth application">
+    Register your application with the OAuth provider (Google, GitHub, etc.) to get client credentials
+  </Step>
+  
+  <Step title="Configure redirect URLs">
+    Set the OAuth callback URL to: `http://localhost:3030/oauth/{provider}/callback`
+    
+    For production, use your actual domain.
+  </Step>
+  
+  <Step title="Add credentials to configuration">
+    Update `config/default.json` with your OAuth client ID and secret:
+    
+    ```json
+    {
+      "authentication": {
+        "oauth": {
+          "google": {
+            "key": "your-client-id",
+            "secret": "your-client-secret"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+  
+  <Step title="Use environment variables in production">
+    ```json config/production.json
+    {
+      "authentication": {
+        "oauth": {
+          "google": {
+            "key": "$GOOGLE_CLIENT_ID",
+            "secret": "$GOOGLE_CLIENT_SECRET"
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Never commit OAuth secrets to version control. Always use environment variables for sensitive credentials.
+</Warning>
+
+## Testing Authentication
+
+After generation, you can test authentication:
+
+```bash
+# Create a user
+curl -X POST http://localhost:3030/users \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"secret"}'
+
+# Login
+curl -X POST http://localhost:3030/authentication \
+  -H "Content-Type: application/json" \
+  -d '{"strategy":"local","email":"user@example.com","password":"secret"}'
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication Guide" icon="lock" href="/guides/authentication/overview">
+    Learn how to use authentication in your app
+  </Card>
+  <Card title="JWT Configuration" icon="key" href="/guides/authentication/jwt">
+    Configure JWT tokens and strategies
+  </Card>
+  <Card title="OAuth Setup" icon="globe" href="/guides/authentication/oauth">
+    Set up OAuth providers
+  </Card>
+  <Card title="Local Strategy" icon="user" href="/guides/authentication/local">
+    Configure email/password authentication
+  </Card>
+</CardGroup>

@@ -1,0 +1,156 @@
+---
+title: Connection command
+description: Add a new database connection to your Feathers application
+---
+
+The `feathers generate connection` command adds a new database connection to your application. This command is used to set up additional database connections beyond the initial one configured during app generation.
+
+## Usage
+
+```bash
+feathers generate connection
+```
+
+**Alias:** `feathers g connection`
+
+## Interactive Prompts
+
+When you run this command, you'll be prompted for:
+
+### Database Type
+
+<ParamField path="database" type="string" required>
+  The type of database to connect to
+  
+  **Choices:**
+  - `sqlite` - SQLite (file-based, no server required)
+  - `mongodb` - MongoDB
+  - `postgresql` - PostgreSQL
+  - `mysql` - MySQL/MariaDB
+  - `mssql` - Microsoft SQL Server
+  - `other` - Other database via custom connection
+</ParamField>
+
+### Connection String
+
+<ParamField path="connectionString" type="string" required>
+  The connection string for the database
+  
+  **Default values by database type:**
+  - MongoDB: `mongodb://127.0.0.1:27017/{name}`
+  - PostgreSQL: `postgres://postgres:@localhost:5432/{name}`
+  - MySQL: `mysql://root:@localhost:3306/{name}`
+  - SQLite: `{name}.sqlite`
+  - MSSQL: `mssql://root:password@localhost:1433/{name}`
+</ParamField>
+
+### Connection Name
+
+<ParamField path="name" type="string">
+  Optional name for the connection (used in configuration)
+  
+  If not provided, defaults to the database type (e.g., "mongodb", "postgres")
+</ParamField>
+
+## What Gets Generated
+
+Running this command will:
+
+<Steps>
+  <Step title="Install database adapter">
+    Installs the appropriate Feathers database adapter package:
+    - `@feathersjs/knex` for SQL databases (PostgreSQL, MySQL, SQLite, MSSQL)
+    - `@feathersjs/mongodb` for MongoDB
+  </Step>
+  
+  <Step title="Install database driver">
+    Installs the database-specific driver:
+    - `pg` for PostgreSQL
+    - `mysql2` for MySQL
+    - `better-sqlite3` for SQLite
+    - `tedious` for MSSQL
+    - `mongodb` for MongoDB
+  </Step>
+  
+  <Step title="Update configuration">
+    Adds the connection string to your configuration files:
+    - `config/default.json` - Default configuration
+    - `config/production.json` - Production overrides
+  </Step>
+  
+  <Step title="Create database client">
+    Creates a new client file at `src/{name}.ts` that initializes the database connection
+  </Step>
+  
+  <Step title="Register in application">
+    Updates `src/app.ts` to configure and use the database connection
+  </Step>
+</Steps>
+
+## Example: Adding PostgreSQL
+
+```bash
+$ feathers generate connection
+? Which database are you connecting to? PostgreSQL
+? Enter the database connection string: postgres://user:pass@localhost:5432/mydb
+? Enter a name for this connection: (postgres) 
+```
+
+**Generated files:**
+
+```typescript src/postgres.ts
+import knex from 'knex'
+import type { Application } from './declarations'
+
+export const postgres = (app: Application) => {
+  const db = knex({
+    client: 'pg',
+    connection: app.get('postgres')
+  })
+
+  app.set('postgresClient', db)
+}
+```
+
+**Updated configuration:**
+
+```json config/default.json
+{
+  "postgres": "postgres://user:pass@localhost:5432/mydb"
+}
+```
+
+## Multiple Connections
+
+You can run this command multiple times to add connections to different databases. Each connection will have its own configuration key and client file.
+
+```typescript
+// Using different connections
+const pgClient = app.get('postgresClient')
+const mongoClient = app.get('mongodbClient')
+```
+
+## Environment Variables
+
+Connection strings can use environment variables in production:
+
+```json config/production.json
+{
+  "postgres": "postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:5432/$POSTGRES_DATABASE"
+}
+```
+
+<Warning>
+  Never commit actual credentials to your repository. Use environment variables for sensitive connection information.
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Generate a Service" icon="code" href="/cli/commands/service">
+    Create a service that uses this database connection
+  </Card>
+  <Card title="Database Configuration" icon="database" href="/cli/configuration/database">
+    Learn more about database configuration options
+  </Card>
+</CardGroup>

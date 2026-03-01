@@ -147,7 +147,9 @@
               "cli/commands/generate",
               "cli/commands/app",
               "cli/commands/service",
-              "cli/commands/hook"
+              "cli/commands/hook",
+              "cli/commands/connection",
+              "cli/commands/authentication"
             ]
           },
           {
